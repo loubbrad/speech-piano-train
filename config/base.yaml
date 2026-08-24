@@ -1,0 +1,36 @@
+data:
+  dataset_dir: null
+  prepared_dir: null
+  variant: interleaved
+  seed: 42
+  sequence_length: 4096
+  workers: 16
+
+model:
+  name: Qwen/Qwen3.5-4B-Base
+
+train:
+  seed: 42
+  micro_batch_size: 1
+  tokens_per_update: 262144
+  learning_rate: 1.0e-5
+  weight_decay: 0.1
+  betas: [0.9, 0.95]
+  eps: 1.0e-8
+  warmup_ratio: 0.01
+  max_grad_norm: 1.0
+  checkpoint_interval: 100
+  num_workers: 2
+
+wandb:
+  project: speech-piano-cpt
+  name: null
+  mode: online
+
+execution:
+  experiments_dir: null
+  container_image: null
+  environment_file: .env
+  gpus: 2
+  gpu_directive: "#SBATCH --gres=gpu:h100:2"
+  slurm: null

@@ -1,0 +1,6 @@
+data:
+  variant: interleaved
+
+wandb:
+  name: qwen35-4b-interleaved
+

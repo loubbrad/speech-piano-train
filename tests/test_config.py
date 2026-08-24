@@ -1,0 +1,45 @@
+from pathlib import Path
+
+import pytest
+import yaml
+from pydantic import ValidationError
+
+from speech_piano_train.config import load_config
+
+
+def test_loads_local_paths_and_experiment_override(tmp_path: Path) -> None:
+    local = tmp_path / "local.yaml"
+    local.write_text(
+        yaml.safe_dump(
+            {
+                "data": {
+                    "dataset_dir": str(tmp_path / "dataset"),
+                    "prepared_dir": str(tmp_path / "prepared"),
+                },
+                "execution": {
+                    "experiments_dir": str(tmp_path / "experiments"),
+                    "container_image": str(tmp_path / "image.sif"),
+                    "slurm": "#SBATCH --partition=gpu\n",
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    config = load_config(
+        Path("config/separated.yaml"),
+        local_path=local,
+    )
+
+    assert config.data.variant == "separated"
+    assert config.data.prepared_path == (tmp_path / "prepared/separated")
+    assert config.execution.gpus == 2
+    assert config.model.name == "Qwen/Qwen3.5-4B-Base"
+
+
+def test_rejects_unknown_config_keys(tmp_path: Path) -> None:
+    override = tmp_path / "override.yaml"
+    override.write_text("train:\n  typo: true\n", encoding="utf-8")
+
+    with pytest.raises(ValidationError):
+        load_config(override, local_path=tmp_path / "missing.yaml")

@@ -1,0 +1,22 @@
+Bootstrap: localimage
+From: {{ deps_image }}
+
+%files
+    pyproject.toml /workspace/speech-piano-train/pyproject.toml
+    speech_piano_train /workspace/speech-piano-train/speech_piano_train
+    config /workspace/speech-piano-train/config
+
+%post
+    set -eu
+    export UV_PROJECT_ENVIRONMENT=/opt/speech-piano/.venv
+    cd /workspace/speech-piano-train
+    uv sync --no-dev --extra cuda-ext
+    uv cache clean
+
+%environment
+    export PATH=/opt/speech-piano/.venv/bin:/usr/local/bin:$PATH
+    export PYTHONUNBUFFERED=1
+
+%test
+    /opt/speech-piano/.venv/bin/python -c \
+        "import causal_conv1d, fla, speech_piano_train, torch; from transformers import Qwen3_5ForCausalLM"

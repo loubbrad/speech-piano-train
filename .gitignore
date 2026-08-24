@@ -1,0 +1,13 @@
+.env
+.venv/
+uv.lock
+config/local.yaml
+data/
+experiments/
+*.sif
+*.egg-info/
+slurm/
+build-*.out
+__pycache__/
+.pytest_cache/
+.ruff_cache/

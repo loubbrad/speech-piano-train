@@ -1,0 +1,16 @@
+data:
+  dataset_dir: /path/to/speech_piano_0.3
+  prepared_dir: /path/to/speech-piano-prepared
+
+execution:
+  experiments_dir: /path/to/experiments
+  container_image: /path/to/speech-piano.sif
+  environment_file: /path/to/.env
+  slurm: |
+    #SBATCH --account=your-account
+    #SBATCH --partition=gpu
+    #SBATCH --nodes=1
+    #SBATCH --ntasks=1
+    #SBATCH --cpus-per-task=32
+    #SBATCH --mem=256G
+    #SBATCH --time=24:00:00
