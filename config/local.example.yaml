@@ -6,6 +6,7 @@ execution:
   experiments_dir: /path/to/experiments
   container_image: /path/to/speech-piano.sif
   environment_file: /path/to/.env
+  container_runtime: singularity
   slurm: |
     #SBATCH --account=your-account
     #SBATCH --partition=gpu
@@ -13,4 +14,4 @@ execution:
     #SBATCH --ntasks=1
     #SBATCH --cpus-per-task=32
     #SBATCH --mem=256G
-    #SBATCH --time=24:00:00
+    #SBATCH --time=3-00:00:00

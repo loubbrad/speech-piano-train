@@ -7,7 +7,7 @@ machine_rank: 0
 main_training_function: main
 mixed_precision: bf16
 num_machines: 1
-num_processes: 2
+num_processes: 4
 rdzv_backend: static
 same_network: true
 use_cpu: false
@@ -22,4 +22,3 @@ fsdp_config:
   fsdp_sync_module_states: true
   fsdp_transformer_layer_cls_to_wrap: Qwen3_5DecoderLayer
   fsdp_use_orig_params: true
-

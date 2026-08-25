@@ -6,22 +6,23 @@ build-backend = "setuptools.build_meta"
 name = "speech-piano-train"
 version = "0"
 description = "Continued pretraining experiments on Speech/Piano."
+requires-python = ">=3.12"
 dependencies = [
-    "accelerate",
+    "accelerate==1.14.0",
     "numpy",
     "pydantic",
     "pyyaml",
     "safetensors",
-    "torch",
+    "torch==2.7.1",
     "tqdm",
-    "transformers",
+    "transformers==5.15.1",
     "wandb",
 ]
 
 [project.optional-dependencies]
 cuda-ext = [
-    "causal-conv1d",
-    "flash-linear-attention[cuda]",
+    "causal-conv1d==1.7.0",
+    "flash-linear-attention[cuda]==0.5.2",
     "ninja",
     "setuptools",
     "wheel",
@@ -52,9 +53,9 @@ include = ["speech_piano_train", "speech_piano_train.*"]
 no-build-isolation-package = ["causal-conv1d"]
 
 [tool.uv.sources]
-torch = { index = "pytorch-cu130" }
+torch = { index = "pytorch-cu126" }
 
 [[tool.uv.index]]
-name = "pytorch-cu130"
-url = "https://download.pytorch.org/whl/cu130"
+name = "pytorch-cu126"
+url = "https://download.pytorch.org/whl/cu126"
 explicit = true

@@ -33,8 +33,10 @@ def test_loads_local_paths_and_experiment_override(tmp_path: Path) -> None:
 
     assert config.data.variant == "separated"
     assert config.data.prepared_path == (tmp_path / "prepared/separated")
-    assert config.execution.gpus == 2
-    assert config.model.name == "Qwen/Qwen3.5-4B-Base"
+    assert config.execution.gpus == 4
+    assert config.execution.container_runtime == "singularity"
+    assert config.train.micro_batch_size == 1
+    assert config.model.name == "Qwen/Qwen3.5-9B-Base"
 
 
 def test_rejects_unknown_config_keys(tmp_path: Path) -> None:

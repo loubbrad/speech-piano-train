@@ -7,7 +7,7 @@ data:
   workers: 16
 
 model:
-  name: Qwen/Qwen3.5-4B-Base
+  name: Qwen/Qwen3.5-9B-Base
 
 train:
   seed: 42
@@ -31,6 +31,7 @@ execution:
   experiments_dir: null
   container_image: null
   environment_file: .env
-  gpus: 2
-  gpu_directive: "#SBATCH --gres=gpu:h100:2"
+  container_runtime: singularity
+  gpus: 4
+  gpu_directive: "#SBATCH --gres=gpu:h100:4"
   slurm: null

@@ -3,15 +3,20 @@ From: {{ deps_image }}
 
 %files
     pyproject.toml /workspace/speech-piano-train/pyproject.toml
+    uv.lock /workspace/speech-piano-train/uv.lock
     speech_piano_train /workspace/speech-piano-train/speech_piano_train
-    config /workspace/speech-piano-train/config
+    config/accelerate-fsdp.yaml /workspace/speech-piano-train/config/accelerate-fsdp.yaml
+    config/base.yaml /workspace/speech-piano-train/config/base.yaml
+    config/interleaved.yaml /workspace/speech-piano-train/config/interleaved.yaml
+    config/separated.yaml /workspace/speech-piano-train/config/separated.yaml
 
 %post
     set -eu
     export UV_PROJECT_ENVIRONMENT=/opt/speech-piano/.venv
     cd /workspace/speech-piano-train
-    uv sync --no-dev --extra cuda-ext
+    uv sync --frozen --no-dev --extra cuda-ext
     uv cache clean
+    chmod -R a+rX /workspace/speech-piano-train
 
 %environment
     export PATH=/opt/speech-piano/.venv/bin:/usr/local/bin:$PATH
@@ -19,4 +24,4 @@ From: {{ deps_image }}
 
 %test
     /opt/speech-piano/.venv/bin/python -c \
-        "import causal_conv1d, fla, speech_piano_train, torch; from transformers import Qwen3_5ForCausalLM"
+        "import causal_conv1d, speech_piano_train, torch; from transformers import Qwen3_5ForCausalLM"

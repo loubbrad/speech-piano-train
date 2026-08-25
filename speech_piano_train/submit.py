@@ -77,7 +77,7 @@ def batch_script(experiment: str, run_dir: Path, config: AppConfig) -> str:
         """
     ).strip()
     command = [
-        "apptainer",
+        execution.container_runtime,
         "exec",
         "--nv",
         "--env-file",
@@ -101,7 +101,7 @@ def batch_script(experiment: str, run_dir: Path, config: AppConfig) -> str:
             execution.gpu_directive.strip(),
             "",
             "set -euo pipefail",
-            f"exec srun --ntasks=1 --exact {shlex.join(command)}",
+            f"exec srun --ntasks=1 {shlex.join(command)}",
             "",
         ]
     )

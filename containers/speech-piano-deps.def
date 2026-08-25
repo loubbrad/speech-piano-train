@@ -1,11 +1,13 @@
 Bootstrap: docker
-From: nvidia/cuda:13.0.3-cudnn-devel-ubuntu24.04
+From: nvidia/cuda:12.6.3-cudnn-devel-ubuntu24.04
 
 %files
     pyproject.toml /workspace/speech-piano-train/pyproject.toml
+    uv.lock /workspace/speech-piano-train/uv.lock
 
 %post
     set -eu
+    chmod 1777 /tmp
     export DEBIAN_FRONTEND=noninteractive
     apt-get update
     apt-get install -y -o Dpkg::Use-Pty=0 --no-install-recommends \
@@ -24,7 +26,7 @@ From: nvidia/cuda:13.0.3-cudnn-devel-ubuntu24.04
     export MAX_JOBS=8
     export CAUSAL_CONV1D_FORCE_BUILD=TRUE
     cd /workspace/speech-piano-train
-    uv sync --no-dev --extra cuda-ext --no-install-project \
+    uv sync --frozen --no-dev --extra cuda-ext --no-install-project \
         --no-binary-package causal-conv1d
     uv cache clean
 
@@ -33,4 +35,4 @@ From: nvidia/cuda:13.0.3-cudnn-devel-ubuntu24.04
 
 %test
     /opt/speech-piano/.venv/bin/python -c \
-        "import causal_conv1d, fla, torch; from transformers import Qwen3_5ForCausalLM"
+        "import causal_conv1d, torch; from transformers import Qwen3_5ForCausalLM"

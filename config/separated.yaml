@@ -2,5 +2,4 @@ data:
   variant: separated
 
 wandb:
-  name: qwen35-4b-separated
-
+  name: qwen35-9b-separated

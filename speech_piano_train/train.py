@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 import shutil
 import time
 from dataclasses import asdict, dataclass
@@ -100,6 +101,7 @@ def train(config: AppConfig, run_dir: str | Path) -> None:
         "dataset": dataset.metadata,
         "world_size": accelerator.num_processes,
         "usable_sequences": usable_sequences,
+        "usable_tokens": usable_sequences * dataset.sequence_length,
         "unused_sequences": len(dataset) - usable_sequences,
         "accumulation_steps": accumulation_steps,
         "total_updates": total_updates,
@@ -176,11 +178,19 @@ def train(config: AppConfig, run_dir: str | Path) -> None:
         mean_loss /= accumulated_batches
         elapsed = time.perf_counter() - update_started
         update_token_count = accumulated_batches * update_tokens
+        tokens_per_second = update_token_count / elapsed
+        loss_value = mean_loss.item()
+        grad_norm_value = grad_norm.item()
+        if not math.isfinite(loss_value) or not math.isfinite(grad_norm_value):
+            raise FloatingPointError(
+                f"Non-finite training metrics: loss={loss_value}, "
+                f"grad_norm={grad_norm_value}"
+            )
         metrics = {
-            "train/loss": mean_loss.item(),
-            "train/grad_norm": grad_norm.item(),
+            "train/loss": loss_value,
+            "train/grad_norm": grad_norm_value,
             "train/learning_rate": scheduler.get_last_lr()[0],
-            "train/tokens_per_second": update_token_count / elapsed,
+            "train/tokens_per_second": tokens_per_second,
         }
         accelerator.log(metrics, step=progress.global_update)
         accumulated_loss.zero_()

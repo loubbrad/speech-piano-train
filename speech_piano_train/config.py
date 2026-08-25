@@ -69,6 +69,7 @@ class ExecutionConfig(ConfigModel):
     experiments_dir: Path | None
     container_image: Path | None
     environment_file: Path
+    container_runtime: Literal["apptainer", "singularity"]
     gpus: int = Field(gt=0)
     gpu_directive: str
     slurm: str | None

@@ -1,6 +1,5 @@
 .env
 .venv/
-uv.lock
 config/local.yaml
 data/
 experiments/

@@ -42,6 +42,9 @@ def test_batch_script_is_valid_bash(tmp_path: Path) -> None:
 
     subprocess.run(["bash", "-n"], input=script, text=True, check=True)
     assert "accelerate launch" in script
+    assert "singularity exec" in script
+    assert "--exact" not in script
+    assert "config/accelerate-fsdp.yaml" in script
     assert '--num_processes "$detected"' in script
     assert str(config.data.prepared_path) in script
     assert "speech-piano-train" in script

@@ -2,7 +2,7 @@
 
 This repository compares one pass of continued pretraining on the upstream
 Speech/Piano interleaved documents with one pass on its separate speech and
-MIDI documents. Both runs start from `Qwen/Qwen3.5-4B-Base`.
+MIDI documents. Both runs start from `Qwen/Qwen3.5-9B-Base`.
 
 It contains no corpus construction, MIDI processing, custom model code,
 Trainer integration, or Slurm watcher.
@@ -61,15 +61,16 @@ Copy `config/local.example.yaml` to `config/local.yaml` and set the HPC paths
 and Slurm directives. The local file is ignored by Git. Each submitted run
 stores the merged configuration in its run directory.
 
-The defaults target Qwen3.5 4B on two H100 80 GB GPUs with 4096-token sequences,
-microbatch size 1, and 262144 tokens per optimizer update. This gives 32 gradient
-accumulation steps. Change `model.name` to use another Qwen3.5 size.
+The defaults target Qwen3.5 9B on four H100 80 GB GPUs with 4096-token
+sequences, microbatch size 1, and 262144 tokens per optimizer update. This
+gives 16 gradient accumulation steps.
 
 ## Dependencies
 
-Dependencies are intentionally unconstrained and there is no committed
-lockfile. Transformers supplies Qwen, Accelerate supplies FSDP and checkpointing,
-and the CUDA extra supplies Qwen3.5's fast DeltaNet kernels.
+The tested PyTorch, Transformers, Accelerate, causal-conv1d, and FLA versions
+are pinned, and `uv.lock` fixes the complete environment. Transformers supplies
+Qwen, Accelerate supplies FSDP and checkpointing, and the CUDA extra supplies
+Qwen3.5's fast DeltaNet kernels.
 
 Local checks do not download the dataset or model:
 
@@ -79,7 +80,7 @@ uv run pytest
 uv run ruff check .
 ```
 
-## Build the Apptainer image
+## Build the Singularity or Apptainer image
 
 The dependency image is separate because compiling `causal-conv1d` and FLA is
 expensive. Adjust the generic build resources for the cluster, then run:
@@ -105,7 +106,7 @@ binding, so Hugging Face works without another configured path.
 
 ```bash
 for condition in interleaved separated; do
-    apptainer exec \
+    singularity exec \
         --bind "$PWD/config/local.yaml:/workspace/speech-piano-train/config/local.yaml:ro" \
         --bind /path/to/data:/path/to/data:ro \
         --bind /path/to/speech-piano-prepared:/path/to/speech-piano-prepared \
@@ -115,15 +116,16 @@ for condition in interleaved separated; do
 done
 ```
 
-Preparation fails if the condition directory already exists.
+Preparation fails if the condition directory already exists. Set
+`execution.container_runtime` to the executable installed on the cluster.
 
 ## Submit training
 
 ```bash
-speech-piano-submit qwen35-4b-interleaved \
+speech-piano-submit qwen35-9b-interleaved \
     --config-file config/interleaved.yaml
 
-speech-piano-submit qwen35-4b-separated \
+speech-piano-submit qwen35-9b-separated \
     --config-file config/separated.yaml
 ```
 
@@ -135,8 +137,8 @@ Training uses BF16 FSDP full sharding, gradient checkpointing, AdamW, and a
 token-based effective batch. Only the newest sharded checkpoint is retained.
 At completion it is merged into a normal Hugging Face directory under `final/`.
 
-Before full runs, use an interactive two-GPU allocation to confirm that the
-container imports `causal_conv1d`, FLA, and Qwen3.5; both H100s are visible; one
-optimizer update fits; and a sharded checkpoint resumes and merges. Keep model,
-tokenizer, optimizer, batch, and scheduler settings identical between the two
-conditions.
+Before full runs, use an interactive four-GPU allocation to confirm that the
+container imports `causal_conv1d`, FLA, and Qwen3.5; all four H100s are visible;
+one optimizer update fits; and a sharded checkpoint resumes and merges. Keep
+model, tokenizer, optimizer, batch, and scheduler settings identical between
+the two conditions.
