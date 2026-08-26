@@ -12,8 +12,8 @@ model:
 train:
   seed: 42
   micro_batch_size: 1
-  tokens_per_update: 262144
-  learning_rate: 1.0e-5
+  tokens_per_update: 1048576
+  learning_rate: 3.0e-5
   weight_decay: 0.1
   betas: [0.9, 0.95]
   eps: 1.0e-8
