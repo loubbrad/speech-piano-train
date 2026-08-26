@@ -62,8 +62,10 @@ and Slurm directives. The local file is ignored by Git. Each submitted run
 stores the merged configuration in its run directory.
 
 The defaults target Qwen3.5 9B on four H100 80 GB GPUs with 4096-token
-sequences, microbatch size 1, and 262144 tokens per optimizer update. This
-gives 16 gradient accumulation steps.
+sequences, microbatch size 1, and 1,048,576 tokens per optimizer update. This
+gives 64 gradient accumulation steps. Training uses a peak learning rate of
+3e-5 with 5% warmup and cosine decay, and clips the gradient norm to 1.0 only
+at optimizer-update boundaries.
 
 ## Dependencies
 
