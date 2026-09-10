@@ -1,5 +1,5 @@
 data:
-  dataset_dir: /path/to/speech_piano_0.3
+  dataset_dir: /path/to/speech_piano_0.5
   prepared_dir: /path/to/speech-piano-prepared
 
 execution:

@@ -12,8 +12,8 @@ Trainer integration, or Slurm watcher.
 Only items marked `train` in the upstream document manifest are used:
 
 - `interleaved` uses one `*.interleaved.doc.txt` document per video.
-- `separated` treats `*.speech.doc.txt` and nonempty `*.midi.doc.txt` files as
-  independent documents.
+- `separated` treats `*.deinterleaved-speech.doc.txt` and nonempty
+  `*.deinterleaved-midi.doc.txt` files as independent documents.
 
 Preparation shuffles each condition once with a fixed seed, appends Qwen's EOS
 token after every document, and writes one `uint32` token stream. A separated
@@ -40,13 +40,13 @@ Authenticate and download the current upstream archive outside this repository:
 ```bash
 hf auth login
 hf download gclef-cmu/speech-piano \
-    speech_piano_0.3.tar.gz \
+    speech_piano_0.5.tar.gz \
     --type dataset \
     --local-dir /path/to/download
-tar -xzf /path/to/download/speech_piano_0.3.tar.gz -C /path/to/data
+tar -xzf /path/to/download/speech_piano_0.5.tar.gz -C /path/to/data
 ```
 
-`data.dataset_dir` should point to the extracted `speech_piano_0.3` directory.
+`data.dataset_dir` should point to the extracted `speech_piano_0.5` directory.
 Nothing else on the machine is inspected for Speech/Piano data.
 
 ## Configuration

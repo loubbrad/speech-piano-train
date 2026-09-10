@@ -37,7 +37,10 @@ def prepare_data(
     dataset_dir = data_config.dataset_path
     output_dir = data_config.prepared_path
     documents_dir = dataset_dir / "documents"
-    manifest_path = documents_dir / "manifest.json"
+    manifest_path = dataset_dir / "manifest.json"
+    if not manifest_path.is_file():
+        # Releases before 0.5 stored the manifest beside the documents.
+        manifest_path = documents_dir / "manifest.json"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     documents = ordered_documents(
         documents_dir,
@@ -120,7 +123,15 @@ def ordered_documents(
     seed: int,
 ) -> list[Document]:
     items = [item for item in manifest["items"] if item["split"] == "train"]
-    if any(item.get("is_benchmark_source") for item in items):
+    benchmark_ids = set(
+        manifest.get("splits", {})
+        .get("benchmark", {})
+        .get("source_youtube_ids", [])
+    )
+    if any(
+        item.get("is_benchmark_source") or item["youtube_id"] in benchmark_ids
+        for item in items
+    ):
         raise ValueError("Training split contains a benchmark-source item")
 
     documents: list[Document] = []
@@ -129,17 +140,36 @@ def ordered_documents(
             Document(
                 youtube_id=item["youtube_id"],
                 modality="interleaved",
-                path=documents_dir / item["document"],
+                path=document_path(
+                    documents_dir,
+                    item,
+                    field="document",
+                    kind="interleaved",
+                ),
             )
             for item in items
         ]
     elif variant == "separated":
         for item in items:
-            for modality, field in (
-                ("speech", "speech_document"),
-                ("midi", "midi_document"),
+            for modality, field, kind in (
+                (
+                    "speech",
+                    "deinterleaved_speech_document",
+                    "deinterleaved-speech",
+                ),
+                (
+                    "midi",
+                    "deinterleaved_midi_document",
+                    "deinterleaved-midi",
+                ),
             ):
-                path = documents_dir / item[field]
+                path = document_path(
+                    documents_dir,
+                    item,
+                    field=field,
+                    kind=kind,
+                    legacy_field=f"{modality}_document",
+                )
                 if path.stat().st_size:
                     documents.append(
                         Document(
@@ -159,6 +189,23 @@ def ordered_documents(
     else:
         raise RuntimeError("Could not separate paired speech and MIDI documents")
     return documents
+
+
+def document_path(
+    documents_dir: Path,
+    item: dict[str, Any],
+    *,
+    field: str,
+    kind: str,
+    legacy_field: str | None = None,
+) -> Path:
+    """Resolve explicit paths from old manifests or derived v0.5 paths."""
+    for candidate in (field, legacy_field):
+        if candidate is not None and candidate in item:
+            return documents_dir / item[candidate]
+
+    youtube_id = item["youtube_id"]
+    return documents_dir / youtube_id[:2] / f"{youtube_id}.{kind}.doc.txt"
 
 
 def has_adjacent_pair(documents: list[Document]) -> bool:
