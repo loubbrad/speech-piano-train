@@ -31,11 +31,12 @@ def main() -> None:
 
 def prepare_submission(experiment: str, config: AppConfig) -> Path:
     execution = config.execution
-    image = execution.container_path
     prepared = config.data.prepared_path
     environment = execution.environment_file
-    if not image.is_file():
-        raise FileNotFoundError(image)
+    if execution.container_runtime != "pyxis":
+        image = execution.container_path
+        if not image.is_file():
+            raise FileNotFoundError(image)
     if not (prepared / "metadata.json").is_file():
         raise FileNotFoundError(prepared / "metadata.json")
     if not environment.is_file():
@@ -76,21 +77,38 @@ def batch_script(experiment: str, run_dir: Path, config: AppConfig) -> str:
             --run-dir {shlex.quote(str(run_dir))}
         """
     ).strip()
-    command = [
-        execution.container_runtime,
-        "exec",
-        "--nv",
-        "--env-file",
-        str(execution.environment_file),
-        "--bind",
-        f"{prepared}:{prepared}:ro",
-        "--bind",
-        f"{run_dir}:{run_dir}",
-        str(execution.container_path),
-        "/bin/bash",
-        "-c",
-        inner,
-    ]
+    if execution.container_runtime == "pyxis":
+        command = [
+            f"--container-image={execution.container_reference}",
+            f"--container-mounts={prepared}:{prepared}:ro,{run_dir}:{run_dir}",
+            "--container-workdir=/workspace/speech-piano-train",
+            "--container-mount-home",
+            "/bin/bash",
+            "-c",
+            inner,
+        ]
+        environment_setup = [
+            "set -a",
+            f"source {shlex.quote(str(execution.environment_file))}",
+            "set +a",
+        ]
+    else:
+        command = [
+            execution.container_runtime,
+            "exec",
+            "--nv",
+            "--env-file",
+            str(execution.environment_file),
+            "--bind",
+            f"{prepared}:{prepared}:ro",
+            "--bind",
+            f"{run_dir}:{run_dir}",
+            execution.container_reference,
+            "/bin/bash",
+            "-c",
+            inner,
+        ]
+        environment_setup = []
     return "\n".join(
         [
             "#!/usr/bin/env bash",
@@ -101,6 +119,7 @@ def batch_script(experiment: str, run_dir: Path, config: AppConfig) -> str:
             execution.gpu_directive.strip(),
             "",
             "set -euo pipefail",
+            *environment_setup,
             f"exec srun --ntasks=1 {shlex.join(command)}",
             "",
         ]

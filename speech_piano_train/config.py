@@ -67,9 +67,9 @@ class WandbConfig(ConfigModel):
 
 class ExecutionConfig(ConfigModel):
     experiments_dir: Path | None
-    container_image: Path | None
+    container_image: str | None
     environment_file: Path
-    container_runtime: Literal["apptainer", "singularity"]
+    container_runtime: Literal["apptainer", "singularity", "pyxis"]
     gpus: int = Field(gt=0)
     gpu_directive: str
     slurm: str | None
@@ -82,7 +82,17 @@ class ExecutionConfig(ConfigModel):
     @property
     def container_path(self) -> Path:
         assert self.container_image is not None
-        return self.container_image
+        path = Path(self.container_image)
+        if not path.is_absolute():
+            path = REPOSITORY_ROOT / path
+        return path.resolve()
+
+    @property
+    def container_reference(self) -> str:
+        assert self.container_image is not None
+        if self.container_runtime == "pyxis":
+            return self.container_image
+        return str(self.container_path)
 
     @property
     def slurm_directives(self) -> str:

@@ -1,0 +1,15 @@
+.git
+.env
+.venv
+config/local.yaml
+data
+experiments
+resources
+slurm
+temp
+*.egg-info
+*.sif
+*.sqsh
+__pycache__
+.pytest_cache
+.ruff_cache

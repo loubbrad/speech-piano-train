@@ -35,6 +35,7 @@ def test_loads_local_paths_and_experiment_override(tmp_path: Path) -> None:
     assert config.data.prepared_path == (tmp_path / "prepared/separated")
     assert config.execution.gpus == 4
     assert config.execution.container_runtime == "singularity"
+    assert config.execution.container_reference == str(tmp_path / "image.sif")
     assert config.train.micro_batch_size == 1
     assert config.model.name == "Qwen/Qwen3.5-9B-Base"
 
@@ -45,3 +46,24 @@ def test_rejects_unknown_config_keys(tmp_path: Path) -> None:
 
     with pytest.raises(ValidationError):
         load_config(override, local_path=tmp_path / "missing.yaml")
+
+
+def test_pyxis_keeps_registry_image_reference(tmp_path: Path) -> None:
+    local = tmp_path / "local.yaml"
+    local.write_text(
+        yaml.safe_dump(
+            {
+                "execution": {
+                    "container_runtime": "pyxis",
+                    "container_image": "ghcr.io#example/speech-piano:dev",
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    config = load_config(local_path=local)
+
+    assert config.execution.container_reference == (
+        "ghcr.io#example/speech-piano:dev"
+    )

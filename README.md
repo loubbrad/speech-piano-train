@@ -82,29 +82,48 @@ uv run pytest
 uv run ruff check .
 ```
 
-## Build the Singularity or Apptainer image
+## Build the container
 
-The dependency image is separate because compiling `causal-conv1d` and FLA is
-expensive. Adjust the generic build resources for the cluster, then run:
-
-```bash
-mkdir -p slurm
-sbatch scripts/build_apptainer.sbatch --deps
-```
-
-Later source or config changes only require rebuilding the application image:
+The Docker image is the single container build artifact. Its dependency layer
+caches the expensive `causal-conv1d` and FLA compilation when only source or
+configuration files change:
 
 ```bash
-sbatch scripts/build_apptainer.sbatch
+docker build -f containers/Dockerfile -t speech-piano:dev .
 ```
 
-Image paths come from `config/local.yaml`.
+Test the image directly where Docker and the NVIDIA Container Toolkit are
+available:
+
+```bash
+docker run --rm --gpus all speech-piano:dev \
+    python -c 'import causal_conv1d, speech_piano_train, torch; print(torch.cuda.device_count())'
+```
+
+Convert that exact local image for an Apptainer or Singularity cluster:
+
+```bash
+apptainer build --force /path/to/speech-piano.sif \
+    docker-daemon:speech-piano:dev
+```
+
+Alternatively, push an immutable tag to a registry for a Pyxis/Enroot cluster:
+
+```bash
+docker tag speech-piano:dev registry.example/speech-piano:GIT_SHA
+docker push registry.example/speech-piano:GIT_SHA
+```
+
+Set `execution.container_runtime` to `apptainer`, `singularity`, or `pyxis` in
+`config/local.yaml`. Apptainer and Singularity use a local SIF path. Pyxis uses
+an Enroot registry reference such as
+`registry.example#speech-piano:GIT_SHA`; it can also use an absolute path to a
+pre-imported `.sqsh` image.
 
 ## Prepare the two streams
 
 Run preparation once per condition. The source dataset is mounted read-only and
-the prepared-data directory is writable. Apptainer keeps its normal host-home
-binding, so Hugging Face works without another configured path.
+the prepared-data directory is writable. For Apptainer or Singularity:
 
 ```bash
 for condition in interleaved separated; do
@@ -119,7 +138,20 @@ done
 ```
 
 Preparation fails if the condition directory already exists. Set
-`execution.container_runtime` to the executable installed on the cluster.
+`execution.container_runtime` to the backend installed on the cluster.
+
+With Pyxis/Enroot, the equivalent preparation command is:
+
+```bash
+for condition in interleaved separated; do
+    srun \
+        --container-image='registry.example#speech-piano:GIT_SHA' \
+        --container-mounts="$PWD/config/local.yaml:/workspace/speech-piano-train/config/local.yaml:ro,/path/to/data:/path/to/data:ro,/path/to/speech-piano-prepared:/path/to/speech-piano-prepared" \
+        --container-workdir=/workspace/speech-piano-train \
+        --container-mount-home \
+        speech-piano-prepare --config-file "config/$condition.yaml"
+done
+```
 
 ## Submit training
 
@@ -130,6 +162,10 @@ speech-piano-submit qwen35-9b-interleaved \
 speech-piano-submit qwen35-9b-separated \
     --config-file config/separated.yaml
 ```
+
+For Pyxis, the environment file configured by `execution.environment_file`
+must use shell-compatible `KEY=value` lines. The generated batch script exports
+those values before `srun`; Pyxis propagates them into the container.
 
 The command creates a run directory, snapshots the configuration, writes
 `job.sh`, submits it, and exits. Use `--dry-run` to generate the job without

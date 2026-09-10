@@ -5,7 +5,7 @@ from speech_piano_train.config import load_config
 from speech_piano_train.submit import batch_script, prepare_submission
 
 
-def configured(tmp_path: Path):
+def configured(tmp_path: Path, *, runtime: str = "singularity"):
     dataset = tmp_path / "dataset"
     prepared = tmp_path / "prepared/interleaved"
     experiments = tmp_path / "experiments"
@@ -26,6 +26,7 @@ execution:
   experiments_dir: {experiments}
   container_image: {image}
   environment_file: {environment}
+  container_runtime: {runtime}
   slurm: |
     #SBATCH --partition=gpu
 """,
@@ -48,6 +49,21 @@ def test_batch_script_is_valid_bash(tmp_path: Path) -> None:
     assert '--num_processes "$detected"' in script
     assert str(config.data.prepared_path) in script
     assert "speech-piano-train" in script
+
+
+def test_batch_script_uses_pyxis_for_enroot(tmp_path: Path) -> None:
+    config = configured(tmp_path, runtime="pyxis")
+    run_dir = tmp_path / "experiments/run"
+    run_dir.mkdir(parents=True)
+    script = batch_script("run", run_dir, config)
+
+    subprocess.run(["bash", "-n"], input=script, text=True, check=True)
+    assert "--container-image=" in script
+    assert "--container-mounts=" in script
+    assert "--container-workdir=/workspace/speech-piano-train" in script
+    assert "--container-mount-home" in script
+    assert f"source {config.execution.environment_file}" in script
+    assert "singularity exec" not in script
 
 
 def test_prepare_submission_snapshots_config(tmp_path: Path) -> None:
