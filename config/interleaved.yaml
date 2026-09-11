@@ -14,8 +14,8 @@ execution:
   container_image: /project/flame/ibukey/containers/speech-piano-current.sqsh
   environment_file: /home/ibukey/speech-piano-train/.env
   container_runtime: pyxis
-  gpus: 8
-  gpu_directive: "#SBATCH --gres=gpu:8"
+  gpus: 4
+  gpu_directive: "#SBATCH --gres=gpu:4"
   slurm: |
     #SBATCH --account=chrisdon
     #SBATCH --partition=flame

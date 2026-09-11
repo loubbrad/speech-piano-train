@@ -6,7 +6,7 @@ MIDI documents. Both runs start from `Qwen/Qwen3.5-9B-Base`.
 
 ## Irmak HPC quick start
 
-The committed experiment configurations target Irmak's eight-H100 Slurm
+The committed experiment configurations target Irmak's four-H100 Slurm
 cluster. After cloning the repository to
 `/home/ibukey/speech-piano-train`, create an untracked `.env`:
 
@@ -91,12 +91,12 @@ Configuration is merged in this order:
 2. `config/local.yaml`, if present
 3. The file passed through `--config-file`
 
-The interleaved and separated files directly contain Irmak's paths, eight-GPU
+The interleaved and separated files directly contain Irmak's paths, four-GPU
 allocation, and Slurm directives. Each submitted run stores the fully merged
 configuration in its run directory.
 
 Training uses 4096-token sequences, microbatch size 1, and 2,097,152 tokens per
-optimizer update. On eight GPUs this gives 64 gradient accumulation steps. It
+optimizer update. On four GPUs this gives 128 gradient accumulation steps. It
 uses a peak learning rate of 3e-5 with 5% warmup and cosine decay, and clips the
 gradient norm to 1.0 only at optimizer-update boundaries.
 
@@ -135,7 +135,7 @@ Training uses BF16 FSDP full sharding, gradient checkpointing, AdamW, and a
 token-based effective batch. Only the newest sharded checkpoint is retained.
 At completion it is merged into a normal Hugging Face directory under `final/`.
 
-The training job checks that all eight requested GPUs are visible. Before
+The training job checks that all four requested GPUs are visible. Before
 committing to both full runs, it is still prudent to confirm that one optimizer
 update fits and that a sharded checkpoint resumes and merges. Keep model,
 tokenizer, optimizer, batch, and scheduler settings identical between the two
