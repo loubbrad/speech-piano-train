@@ -1,5 +1,6 @@
 .env
 .venv/
+.irmak-submit-env/
 config/local.yaml
 data/
 experiments/

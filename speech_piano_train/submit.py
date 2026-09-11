@@ -33,12 +33,19 @@ def prepare_submission(experiment: str, config: AppConfig) -> Path:
     execution = config.execution
     prepared = config.data.prepared_path
     environment = execution.environment_file
-    if execution.container_runtime != "pyxis":
+    if execution.container_runtime == "pyxis":
+        image_value = Path(execution.container_image or "")
+        if image_value.is_absolute() and not image_value.is_file():
+            raise FileNotFoundError(image_value)
+    else:
         image = execution.container_path
         if not image.is_file():
             raise FileNotFoundError(image)
     if not (prepared / "metadata.json").is_file():
         raise FileNotFoundError(prepared / "metadata.json")
+    model_path = Path(config.model.name)
+    if model_path.is_absolute() and not model_path.is_dir():
+        raise FileNotFoundError(model_path)
     if not environment.is_file():
         raise FileNotFoundError(environment)
     validate_directives(execution.slurm_directives)
@@ -61,6 +68,8 @@ def batch_script(experiment: str, run_dir: Path, config: AppConfig) -> str:
     inner = dedent(
         f"""\
         set -euo pipefail
+        export HOME=/tmp/speech-piano-home
+        mkdir -p "$HOME"
         cd /workspace/speech-piano-train
 
         detected=$(python -c 'import torch; print(torch.cuda.device_count())')
@@ -72,17 +81,30 @@ def batch_script(experiment: str, run_dir: Path, config: AppConfig) -> str:
         exec accelerate launch \\
             --config_file config/accelerate-fsdp.yaml \\
             --num_processes "$detected" \\
+            --main_process_port "$MASTER_PORT" \\
             "$(command -v speech-piano-train)" \\
             --config-snapshot {shlex.quote(str(snapshot))} \\
             --run-dir {shlex.quote(str(run_dir))}
         """
     ).strip()
     if execution.container_runtime == "pyxis":
+        mounts = [
+            f"{prepared}:{prepared}:ro",
+            f"{run_dir}:{run_dir}",
+        ]
+        model_path = Path(config.model.name)
+        if model_path.is_absolute():
+            mounts.append(f"{model_path}:{model_path}:ro")
+        container_environment = (
+            "WANDB_API_KEY,HF_TOKEN,HF_HUB_OFFLINE,TRANSFORMERS_OFFLINE,"
+            "TOKENIZERS_PARALLELISM,PYTORCH_CUDA_ALLOC_CONF,MASTER_PORT"
+        )
         command = [
             f"--container-image={execution.container_reference}",
-            f"--container-mounts={prepared}:{prepared}:ro,{run_dir}:{run_dir}",
+            f"--container-mounts={','.join(mounts)}",
             "--container-workdir=/workspace/speech-piano-train",
-            "--container-mount-home",
+            "--no-container-mount-home",
+            f"--container-env={container_environment}",
             "/bin/bash",
             "-c",
             inner,
@@ -120,6 +142,11 @@ def batch_script(experiment: str, run_dir: Path, config: AppConfig) -> str:
             "",
             "set -euo pipefail",
             *environment_setup,
+            "export HF_HUB_OFFLINE=1",
+            "export TRANSFORMERS_OFFLINE=1",
+            "export TOKENIZERS_PARALLELISM=false",
+            "export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True",
+            'export MASTER_PORT="$((20000 + SLURM_JOB_ID % 20000))"',
             f"exec srun --ntasks=1 {shlex.join(command)}",
             "",
         ]

@@ -61,9 +61,26 @@ def test_batch_script_uses_pyxis_for_enroot(tmp_path: Path) -> None:
     assert "--container-image=" in script
     assert "--container-mounts=" in script
     assert "--container-workdir=/workspace/speech-piano-train" in script
-    assert "--container-mount-home" in script
+    assert "--no-container-mount-home" in script
+    assert "--container-env=" in script
     assert f"source {config.execution.environment_file}" in script
+    assert "--main_process_port" in script
     assert "singularity exec" not in script
+
+
+def test_pyxis_mounts_local_model_read_only(tmp_path: Path) -> None:
+    config = configured(tmp_path, runtime="pyxis")
+    model = tmp_path / "model"
+    model.mkdir()
+    config = config.model_copy(
+        update={"model": config.model.model_copy(update={"name": str(model)})}
+    )
+    run_dir = tmp_path / "experiments/run"
+    run_dir.mkdir(parents=True)
+
+    script = batch_script("run", run_dir, config)
+
+    assert f"{model}:{model}:ro" in script
 
 
 def test_prepare_submission_snapshots_config(tmp_path: Path) -> None:
@@ -74,3 +91,18 @@ def test_prepare_submission_snapshots_config(tmp_path: Path) -> None:
     assert (run_dir / "config.yaml").is_file()
     assert (run_dir / "job.sh").is_file()
     assert (run_dir / "slurm").is_dir()
+
+
+def test_prepare_submission_requires_local_model(tmp_path: Path) -> None:
+    config = configured(tmp_path, runtime="pyxis")
+    missing = tmp_path / "missing-model"
+    config = config.model_copy(
+        update={"model": config.model.model_copy(update={"name": str(missing)})}
+    )
+
+    try:
+        prepare_submission("interleaved", config)
+    except FileNotFoundError as error:
+        assert error.args == (missing,)
+    else:
+        raise AssertionError("missing local model was accepted")

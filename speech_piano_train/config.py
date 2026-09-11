@@ -91,6 +91,9 @@ class ExecutionConfig(ConfigModel):
     def container_reference(self) -> str:
         assert self.container_image is not None
         if self.container_runtime == "pyxis":
+            path = Path(self.container_image)
+            if path.is_absolute():
+                return str(path.resolve())
             return self.container_image
         return str(self.container_path)
 

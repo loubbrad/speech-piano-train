@@ -26,10 +26,9 @@ def test_loads_local_paths_and_experiment_override(tmp_path: Path) -> None:
         encoding="utf-8",
     )
 
-    config = load_config(
-        Path("config/separated.yaml"),
-        local_path=local,
-    )
+    experiment = tmp_path / "separated.yaml"
+    experiment.write_text("data:\n  variant: separated\n", encoding="utf-8")
+    config = load_config(experiment, local_path=local)
 
     assert config.data.variant == "separated"
     assert config.data.prepared_path == (tmp_path / "prepared/separated")
@@ -67,3 +66,26 @@ def test_pyxis_keeps_registry_image_reference(tmp_path: Path) -> None:
     assert config.execution.container_reference == (
         "ghcr.io#example/speech-piano:dev"
     )
+
+
+def test_pyxis_resolves_local_image_symlink(tmp_path: Path) -> None:
+    image = tmp_path / "image-sha.sqsh"
+    image.touch()
+    current = tmp_path / "current.sqsh"
+    current.symlink_to(image.name)
+    local = tmp_path / "local.yaml"
+    local.write_text(
+        yaml.safe_dump(
+            {
+                "execution": {
+                    "container_runtime": "pyxis",
+                    "container_image": str(current),
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    config = load_config(local_path=local)
+
+    assert config.execution.container_reference == str(image)

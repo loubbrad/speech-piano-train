@@ -4,6 +4,55 @@ This repository compares one pass of continued pretraining on the upstream
 Speech/Piano interleaved documents with one pass on its separate speech and
 MIDI documents. Both runs start from `Qwen/Qwen3.5-9B-Base`.
 
+## Irmak HPC quick start
+
+The committed experiment configurations target Irmak's eight-H100 Slurm
+cluster. After cloning the repository to
+`/home/ibukey/speech-piano-train`, create an untracked `.env`:
+
+```bash
+HF_TOKEN=hf_...
+WANDB_API_KEY=...
+```
+
+Protect it and run the three setup/submission commands from the repository
+root:
+
+```bash
+chmod 600 .env
+./scripts/irmak/refresh-container.sh
+./scripts/irmak/prepare-data.sh
+./scripts/irmak/train.sh
+```
+
+`refresh-container.sh` imports the GHCR image tagged with the checked-out Git
+commit, saves it under `/project/flame/ibukey/containers`, and validates it on
+eight GPUs. Consequently, pull the repository before refreshing the image.
+The public GHCR package must contain a successful image for that exact commit.
+
+`prepare-data.sh` uses the container's `hf` command to download both the corpus
+and Qwen checkpoint. The downloads, extracted data, model, Hugging Face cache,
+and prepared token streams are explicit writable host mounts under
+`/project/flame/ibukey`; they do not live in the container filesystem. The
+script is safe to rerun after successful stages and reports partial output for
+manual inspection.
+
+`train.sh` creates a small Conda submission environment on first use and
+submits only the interleaved condition. The separated configuration remains
+available for a later explicit submission:
+
+```bash
+./scripts/irmak/train.sh interleaved
+./scripts/irmak/train.sh separated
+./scripts/irmak/train.sh --dry-run
+```
+
+Container images are published by `.github/workflows/container.yaml` on each
+push to `main`. After its first run, ensure the GHCR package itself is public;
+repository visibility and package visibility can be configured separately.
+Non-secret paths and Slurm settings shared by the scripts are in
+`scripts/irmak/common.sh`.
+
 It contains no corpus construction, MIDI processing, custom model code,
 Trainer integration, or Slurm watcher.
 
@@ -33,39 +82,22 @@ Each prepared condition contains:
 only the tail needed to form complete 4096-token sequences and optimizer
 updates; those counts are recorded in `training.json`.
 
-## Data
-
-Authenticate and download the current upstream archive outside this repository:
-
-```bash
-hf auth login
-hf download gclef-cmu/speech-piano \
-    speech_piano_0.5.tar.gz \
-    --type dataset \
-    --local-dir /path/to/download
-tar -xzf /path/to/download/speech_piano_0.5.tar.gz -C /path/to/data
-```
-
-`data.dataset_dir` should point to the extracted `speech_piano_0.5` directory.
-Nothing else on the machine is inspected for Speech/Piano data.
-
 ## Configuration
 
 Configuration is merged in this order:
 
 1. `config/base.yaml`
-2. `config/local.yaml`
+2. `config/local.yaml`, if present
 3. The file passed through `--config-file`
 
-Copy `config/local.example.yaml` to `config/local.yaml` and set the HPC paths
-and Slurm directives. The local file is ignored by Git. Each submitted run
-stores the merged configuration in its run directory.
+The interleaved and separated files directly contain Irmak's paths, eight-GPU
+allocation, and Slurm directives. Each submitted run stores the fully merged
+configuration in its run directory.
 
-The defaults target Qwen3.5 9B on four H100 80 GB GPUs with 4096-token
-sequences, microbatch size 1, and 1,048,576 tokens per optimizer update. This
-gives 64 gradient accumulation steps. Training uses a peak learning rate of
-3e-5 with 5% warmup and cosine decay, and clips the gradient norm to 1.0 only
-at optimizer-update boundaries.
+Training uses 4096-token sequences, microbatch size 1, and 1,048,576 tokens per
+optimizer update. On eight GPUs this gives 32 gradient accumulation steps. It
+uses a peak learning rate of 3e-5 with 5% warmup and cosine decay, and clips the
+gradient norm to 1.0 only at optimizer-update boundaries.
 
 ## Dependencies
 
@@ -82,101 +114,29 @@ uv run pytest
 uv run ruff check .
 ```
 
-## Build the container
+## Publish the container
 
-The Docker image is the single container build artifact. Its dependency layer
-caches the expensive `causal-conv1d` and FLA compilation when only source or
-configuration files change:
-
-```bash
-docker build -f containers/Dockerfile -t speech-piano:dev .
-```
-
-Test the image directly where Docker and the NVIDIA Container Toolkit are
-available:
+The GitHub workflow publishes `linux/amd64` images to GHCR with both the full
+Git commit and `main` tags. The dependency layer caches the expensive
+`causal-conv1d` and FLA compilation. If the hosted builder is unavailable, the
+same image can be published manually from an x86-64 Docker machine:
 
 ```bash
-docker run --rm --gpus all speech-piano:dev \
-    python -c 'import causal_conv1d, speech_piano_train, torch; print(torch.cuda.device_count())'
+revision=$(git rev-parse HEAD)
+image=ghcr.io/loubbrad/speech-piano-train:$revision
+docker build --platform linux/amd64 \
+    --build-arg TORCH_CUDA_ARCH_LIST=9.0 \
+    --build-arg VCS_REF="$revision" \
+    -f containers/Dockerfile -t "$image" .
+docker push "$image"
 ```
-
-Convert that exact local image for an Apptainer or Singularity cluster:
-
-```bash
-apptainer build --force /path/to/speech-piano.sif \
-    docker-daemon:speech-piano:dev
-```
-
-Alternatively, push an immutable tag to a registry for a Pyxis/Enroot cluster:
-
-```bash
-docker tag speech-piano:dev registry.example/speech-piano:GIT_SHA
-docker push registry.example/speech-piano:GIT_SHA
-```
-
-Set `execution.container_runtime` to `apptainer`, `singularity`, or `pyxis` in
-`config/local.yaml`. Apptainer and Singularity use a local SIF path. Pyxis uses
-an Enroot registry reference such as
-`registry.example#speech-piano:GIT_SHA`; it can also use an absolute path to a
-pre-imported `.sqsh` image.
-
-## Prepare the two streams
-
-Run preparation once per condition. The source dataset is mounted read-only and
-the prepared-data directory is writable. For Apptainer or Singularity:
-
-```bash
-for condition in interleaved separated; do
-    singularity exec \
-        --bind "$PWD/config/local.yaml:/workspace/speech-piano-train/config/local.yaml:ro" \
-        --bind /path/to/data:/path/to/data:ro \
-        --bind /path/to/speech-piano-prepared:/path/to/speech-piano-prepared \
-        /path/to/speech-piano.sif \
-        speech-piano-prepare \
-        --config-file "/workspace/speech-piano-train/config/$condition.yaml"
-done
-```
-
-Preparation fails if the condition directory already exists. Set
-`execution.container_runtime` to the backend installed on the cluster.
-
-With Pyxis/Enroot, the equivalent preparation command is:
-
-```bash
-for condition in interleaved separated; do
-    srun \
-        --container-image='registry.example#speech-piano:GIT_SHA' \
-        --container-mounts="$PWD/config/local.yaml:/workspace/speech-piano-train/config/local.yaml:ro,/path/to/data:/path/to/data:ro,/path/to/speech-piano-prepared:/path/to/speech-piano-prepared" \
-        --container-workdir=/workspace/speech-piano-train \
-        --container-mount-home \
-        speech-piano-prepare --config-file "config/$condition.yaml"
-done
-```
-
-## Submit training
-
-```bash
-speech-piano-submit qwen35-9b-interleaved \
-    --config-file config/interleaved.yaml
-
-speech-piano-submit qwen35-9b-separated \
-    --config-file config/separated.yaml
-```
-
-For Pyxis, the environment file configured by `execution.environment_file`
-must use shell-compatible `KEY=value` lines. The generated batch script exports
-those values before `srun`; Pyxis propagates them into the container.
-
-The command creates a run directory, snapshots the configuration, writes
-`job.sh`, submits it, and exits. Use `--dry-run` to generate the job without
-calling `sbatch`.
 
 Training uses BF16 FSDP full sharding, gradient checkpointing, AdamW, and a
 token-based effective batch. Only the newest sharded checkpoint is retained.
 At completion it is merged into a normal Hugging Face directory under `final/`.
 
-Before full runs, use an interactive four-GPU allocation to confirm that the
-container imports `causal_conv1d`, FLA, and Qwen3.5; all four H100s are visible;
-one optimizer update fits; and a sharded checkpoint resumes and merges. Keep
+The refresh script checks imports, all eight H100s, and the NVLink topology.
+Before committing to both full runs, it is still prudent to confirm that one
+optimizer update fits and that a sharded checkpoint resumes and merges. Keep
 model, tokenizer, optimizer, batch, and scheduler settings identical between
 the two conditions.
