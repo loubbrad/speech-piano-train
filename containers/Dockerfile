@@ -45,5 +45,5 @@ RUN uv sync --frozen --no-dev --extra cuda-ext \
     && chmod -R a+rX /workspace/speech-piano-train \
     && printf '%s\n' "$VCS_REF" > /opt/speech-piano/image-revision \
     && python -c \
-        "import causal_conv1d, fla, speech_piano_train, torch; from transformers import Qwen3_5ForCausalLM" \
+        "import causal_conv1d, speech_piano_train, torch; from transformers import Qwen3_5ForCausalLM" \
     && hf version
