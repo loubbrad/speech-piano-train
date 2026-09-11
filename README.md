@@ -119,17 +119,16 @@ uv run ruff check .
 The GitHub workflow publishes `linux/amd64` images to GHCR with both the full
 Git commit and `main` tags. The dependency layer caches the expensive
 `causal-conv1d` and FLA compilation. If the hosted builder is unavailable, the
-same image can be published manually from an x86-64 Docker machine:
+same image can be published manually from an x86-64 Docker machine. Put a
+classic GitHub token with `write:packages` access in the ignored `.env` file:
 
-```bash
-revision=$(git rev-parse HEAD)
-image=ghcr.io/loubbrad/speech-piano-train:$revision
-docker build --platform linux/amd64 \
-    --build-arg TORCH_CUDA_ARCH_LIST=9.0 \
-    --build-arg VCS_REF="$revision" \
-    -f containers/Dockerfile -t "$image" .
-docker push "$image"
+```dotenv
+GHCR_TOKEN=ghp_your_classic_token_here
 ```
+
+Then run `./scripts/publish-container.sh`. `GHCR_USERNAME` and
+`GHCR_IMAGE_REPOSITORY` can also be set in `.env` to override their defaults.
+The script builds and pushes both tags directly with Buildx.
 
 Training uses BF16 FSDP full sharding, gradient checkpointing, AdamW, and a
 token-based effective batch. Only the newest sharded checkpoint is retained.
