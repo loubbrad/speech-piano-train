@@ -95,8 +95,8 @@ The interleaved and separated files directly contain Irmak's paths, eight-GPU
 allocation, and Slurm directives. Each submitted run stores the fully merged
 configuration in its run directory.
 
-Training uses 4096-token sequences, microbatch size 1, and 1,048,576 tokens per
-optimizer update. On eight GPUs this gives 32 gradient accumulation steps. It
+Training uses 4096-token sequences, microbatch size 1, and 2,097,152 tokens per
+optimizer update. On eight GPUs this gives 64 gradient accumulation steps. It
 uses a peak learning rate of 3e-5 with 5% warmup and cosine decay, and clips the
 gradient norm to 1.0 only at optimizer-update boundaries.
 
