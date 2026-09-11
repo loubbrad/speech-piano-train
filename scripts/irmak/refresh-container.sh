@@ -7,67 +7,44 @@ repo_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)
 source "$repo_dir/scripts/irmak/common.sh"
 cd "$repo_dir"
 
-revision=$(git rev-parse HEAD)
-export IRMAK_IMAGE_REVISION=$revision
 registry=${IRMAK_IMAGE_REPOSITORY%%/*}
 image_name=${IRMAK_IMAGE_REPOSITORY#*/}
-image_uri="docker://${registry}#${image_name}:${revision}"
-revision_image="$IRMAK_CONTAINER_DIR/speech-piano-${revision}.sqsh"
+image_uri="docker://${registry}#${image_name}:main"
+main_image="$IRMAK_CONTAINER_DIR/speech-piano-main.sqsh"
 
 mkdir -p "$IRMAK_CONTAINER_DIR"
+environment_file="$repo_dir/.env"
+if [[ ! -f $environment_file ]]; then
+    echo "Missing $environment_file; create it with GHCR_TOKEN=..." >&2
+    exit 1
+fi
+# shellcheck disable=SC1090
+source "$environment_file"
+: "${GHCR_TOKEN:?Set GHCR_TOKEN in $environment_file}"
+export GHCR_TOKEN
+export ENROOT_CONFIG_PATH="$IRMAK_CONTAINER_DIR/enroot-config"
+mkdir -p "$ENROOT_CONFIG_PATH"
+printf 'machine ghcr.io login %s password $GHCR_TOKEN\n' \
+    "${GHCR_USERNAME:-loubbrad}" > "$ENROOT_CONFIG_PATH/.credentials"
+chmod 600 "$ENROOT_CONFIG_PATH/.credentials"
+
 irmak_srun_args
 
-if [[ ! -f $revision_image ]]; then
-    partial="$revision_image.partial"
-    if [[ -e $partial ]]; then
-        echo "Remove the incomplete image before retrying: $partial" >&2
-        exit 1
-    fi
-    echo "Importing $image_uri"
-    srun "${IRMAK_SRUN_ARGS[@]}" \
-        --gres=gpu:1 \
-        --cpus-per-task=16 \
-        --time=01:00:00 \
-        enroot import --output "$partial" "$image_uri"
-    mv -- "$partial" "$revision_image"
-else
-    echo "Using existing image for commit $revision"
+partial="$main_image.partial"
+if [[ -e $partial ]]; then
+    echo "Remove the incomplete image before retrying: $partial" >&2
+    exit 1
 fi
-
-echo "Checking the image on eight GPUs"
+echo "Importing $image_uri"
 srun "${IRMAK_SRUN_ARGS[@]}" \
-    --gres=gpu:8 \
-    --cpus-per-task=32 \
-    --time=00:15:00 \
-    --container-image="$revision_image" \
-    --no-container-mount-home \
-    --container-env=IRMAK_IMAGE_REVISION \
+    --gres=gpu:1 \
+    --cpus-per-task=16 \
+    --time=01:00:00 \
     bash -c '
         set -euo pipefail
-        actual=$(cat /opt/speech-piano/image-revision)
-        [[ $actual == "$IRMAK_IMAGE_REVISION" ]] || {
-            echo "Image revision mismatch: expected $IRMAK_IMAGE_REVISION, found $actual" >&2
-            exit 1
-        }
-        python - <<"PY"
-import causal_conv1d
-import fla
-import torch
-from transformers import Qwen3_5ForCausalLM
+        enroot import --output "$1" "$2"
+        mv -- "$1" "$3"
+    ' bash "$partial" "$image_uri" "$main_image"
 
-count = torch.cuda.device_count()
-assert count == 8, f"expected 8 GPUs, found {count}"
-print(f"torch={torch.__version__} cuda={torch.version.cuda} GPUs={count}")
-for index in range(count):
-    name = torch.cuda.get_device_name(index)
-    capability = torch.cuda.get_device_capability(index)
-    assert "H100" in name, f"GPU {index} is not an H100: {name}"
-    assert capability == (9, 0), f"unexpected capability for GPU {index}: {capability}"
-    print(index, name, capability)
-PY
-        hf version
-        nvidia-smi topo -m
-    '
-
-ln -sfn -- "$(basename -- "$revision_image")" "$IRMAK_CONTAINER"
-echo "Container ready: $revision_image"
+ln -sfn -- "$(basename -- "$main_image")" "$IRMAK_CONTAINER"
+echo "Container ready: $main_image"

@@ -75,7 +75,9 @@ srun "${IRMAK_SRUN_ARGS[@]}" \
                 exit 1
             fi
             mkdir "$extract_root"
-            tar -xzf "$archive" -C "$extract_root"
+            tar --checkpoint=10000 --checkpoint-action=dot \
+                -xzf "$archive" -C "$extract_root"
+            echo
             extracted="$extract_root/$(basename "$IRMAK_DATASET_DIR")"
             if [[ ! -f $extracted/manifest.json && \
                   ! -f $extracted/documents/manifest.json ]]; then

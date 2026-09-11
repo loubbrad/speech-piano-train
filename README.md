@@ -13,6 +13,8 @@ cluster. After cloning the repository to
 ```bash
 HF_TOKEN=hf_...
 WANDB_API_KEY=...
+GHCR_TOKEN=ghp_...
+# GHCR_USERNAME=your-github-username
 ```
 
 Protect it and run the three setup/submission commands from the repository
@@ -25,10 +27,10 @@ chmod 600 .env
 ./scripts/irmak/train.sh
 ```
 
-`refresh-container.sh` imports the GHCR image tagged with the checked-out Git
-commit, saves it under `/project/flame/ibukey/containers`, and validates it on
-eight GPUs. Consequently, pull the repository before refreshing the image.
-The public GHCR package must contain a successful image for that exact commit.
+`refresh-container.sh` imports the latest `main` image from GHCR and saves it
+under `/project/flame/ibukey/containers`. `GHCR_TOKEN` needs `read:packages`
+access to the package. The import is finalized inside its Slurm allocation to
+avoid stale filesystem metadata on the login node.
 
 `prepare-data.sh` uses the container's `hf` command to download both the corpus
 and Qwen checkpoint. The downloads, extracted data, model, Hugging Face cache,
@@ -48,8 +50,7 @@ available for a later explicit submission:
 ```
 
 Container images are published by `.github/workflows/container.yaml` on each
-push to `main`. After its first run, ensure the GHCR package itself is public;
-repository visibility and package visibility can be configured separately.
+push to `main`.
 Non-secret paths and Slurm settings shared by the scripts are in
 `scripts/irmak/common.sh`.
 
@@ -134,8 +135,8 @@ Training uses BF16 FSDP full sharding, gradient checkpointing, AdamW, and a
 token-based effective batch. Only the newest sharded checkpoint is retained.
 At completion it is merged into a normal Hugging Face directory under `final/`.
 
-The refresh script checks imports, all eight H100s, and the NVLink topology.
-Before committing to both full runs, it is still prudent to confirm that one
-optimizer update fits and that a sharded checkpoint resumes and merges. Keep
-model, tokenizer, optimizer, batch, and scheduler settings identical between
-the two conditions.
+The training job checks that all eight requested GPUs are visible. Before
+committing to both full runs, it is still prudent to confirm that one optimizer
+update fits and that a sharded checkpoint resumes and merges. Keep model,
+tokenizer, optimizer, batch, and scheduler settings identical between the two
+conditions.

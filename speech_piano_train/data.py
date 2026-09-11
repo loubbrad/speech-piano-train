@@ -70,10 +70,15 @@ def prepare_data(
             workers=data_config.workers,
             tokenizer=tokenizer,
         )
+        description = (
+            "Tokenizing de-interleaved speech and MIDI documents"
+            if data_config.variant == "separated"
+            else "Tokenizing interleaved documents"
+        )
         for document, token_ids in tqdm(
             iterator,
             total=len(documents),
-            desc=f"Tokenizing {data_config.variant}",
+            desc=description,
             unit="documents",
         ):
             encoded = np.empty(len(token_ids) + 1, dtype=TOKEN_DTYPE)
