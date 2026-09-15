@@ -27,17 +27,18 @@ chmod 600 .env
 ./scripts/irmak/train.sh
 ```
 
-`refresh-container.sh` imports the latest `main` image from GHCR and saves it
-under `/project/flame/ibukey/containers`. `GHCR_TOKEN` needs `read:packages`
-access to the package. The import is finalized inside its Slurm allocation to
-avoid stale filesystem metadata on the login node.
+`refresh-container.sh` submits a waited batch job that imports the latest
+`main` image from GHCR and saves it under `/project/flame/ibukey/containers`.
+`GHCR_TOKEN` needs `read:packages` access to the package. The import is
+finalized inside its Slurm allocation to avoid stale filesystem metadata on
+the login node.
 
-`prepare-data.sh` uses the container's `hf` command to download both the corpus
-and Qwen checkpoint. The downloads, extracted data, model, Hugging Face cache,
-and prepared token streams are explicit writable host mounts under
-`/project/flame/ibukey`; they do not live in the container filesystem. The
-script is safe to rerun after successful stages and reports partial output for
-manual inspection.
+`prepare-data.sh` submits a waited Pyxis batch job and uses the container's `hf`
+command to download both the corpus and Qwen checkpoint. The downloads,
+extracted data, model, Hugging Face cache, and prepared token streams are
+explicit writable host mounts under `/project/flame/ibukey`; they do not live
+in the container filesystem. The script is safe to rerun after successful
+stages and reports partial output for manual inspection.
 
 `train.sh` creates a small Conda submission environment on first use and
 submits only the interleaved condition. The separated configuration remains

@@ -21,14 +21,14 @@ IRMAK_DATA_REPOSITORY=gclef-cmu/speech-piano
 IRMAK_DATA_ARCHIVE=speech_piano_0.5.tar.gz
 IRMAK_MODEL_REPOSITORY=Qwen/Qwen3.5-9B-Base
 
-irmak_srun_args() {
-    IRMAK_SRUN_ARGS=(
+irmak_sbatch_args() {
+    IRMAK_SBATCH_ARGS=(
         --account="$IRMAK_ACCOUNT"
         --partition="$IRMAK_PARTITION"
         --nodes=1
         --ntasks=1
     )
     if [[ -n $IRMAK_QOS ]]; then
-        IRMAK_SRUN_ARGS+=(--qos="$IRMAK_QOS")
+        IRMAK_SBATCH_ARGS+=(--qos="$IRMAK_QOS")
     fi
 }

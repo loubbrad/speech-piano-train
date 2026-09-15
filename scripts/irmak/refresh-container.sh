@@ -28,23 +28,37 @@ printf 'machine ghcr.io login %s password $GHCR_TOKEN\n' \
     "${GHCR_USERNAME:-loubbrad}" > "$ENROOT_CONFIG_PATH/.credentials"
 chmod 600 "$ENROOT_CONFIG_PATH/.credentials"
 
-irmak_srun_args
-
 partial="$main_image.partial"
 if [[ -e $partial ]]; then
     echo "Remove the incomplete image before retrying: $partial" >&2
     exit 1
 fi
+
+logs_dir="$repo_dir/logs"
+mkdir -p "$logs_dir"
+export IRMAK_IMAGE_URI="$image_uri"
+export IRMAK_PARTIAL_IMAGE="$partial"
+export IRMAK_MAIN_IMAGE="$main_image"
+
+irmak_sbatch_args
 echo "Importing $image_uri"
-srun "${IRMAK_SRUN_ARGS[@]}" \
+echo "Slurm output: $logs_dir/refresh-container-<job-id>.out"
+sbatch --wait \
+    "${IRMAK_SBATCH_ARGS[@]}" \
+    --job-name=refresh-container \
+    --chdir="$repo_dir" \
+    --output="$logs_dir/refresh-container-%j.out" \
+    --export=ALL \
     --gres=gpu:1 \
     --cpus-per-task=16 \
     --time=01:00:00 \
-    bash -c '
-        set -euo pipefail
-        enroot import --output "$1" "$2"
-        mv -- "$1" "$3"
-    ' bash "$partial" "$image_uri" "$main_image"
+    <<'BATCH'
+#!/usr/bin/env bash
+set -euo pipefail
+
+enroot import --output "$IRMAK_PARTIAL_IMAGE" "$IRMAK_IMAGE_URI"
+mv -- "$IRMAK_PARTIAL_IMAGE" "$IRMAK_MAIN_IMAGE"
+BATCH
 
 ln -sfn -- "$(basename -- "$main_image")" "$IRMAK_CONTAINER"
 echo "Container ready: $main_image"

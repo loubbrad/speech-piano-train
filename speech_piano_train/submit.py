@@ -65,6 +65,7 @@ def batch_script(experiment: str, run_dir: Path, config: AppConfig) -> str:
     execution = config.execution
     prepared = config.data.prepared_path
     snapshot = run_dir / "config.yaml"
+    container_directives: list[str] = []
     inner = dedent(
         f"""\
         set -euo pipefail
@@ -91,29 +92,24 @@ def batch_script(experiment: str, run_dir: Path, config: AppConfig) -> str:
         mounts = [
             f"{prepared}:{prepared}:ro",
             f"{run_dir}:{run_dir}",
+            f"{execution.environment_file}:/workspace/speech-piano-train/.env:ro",
         ]
         model_path = Path(config.model.name)
         if model_path.is_absolute():
             mounts.append(f"{model_path}:{model_path}:ro")
-        container_environment = (
-            "WANDB_API_KEY,HF_TOKEN,HF_HUB_OFFLINE,TRANSFORMERS_OFFLINE,"
-            "TOKENIZERS_PARALLELISM,PYTORCH_CUDA_ALLOC_CONF,MASTER_PORT"
-        )
-        command = [
-            f"--container-image={execution.container_reference}",
-            f"--container-mounts={','.join(mounts)}",
-            "--container-workdir=/workspace/speech-piano-train",
-            "--no-container-mount-home",
-            f"--container-env={container_environment}",
-            "/bin/bash",
-            "-c",
-            inner,
+        image = execution.container_reference.replace("#", r"\#")
+        container_directives = [
+            f"#SBATCH --container-image={image}",
+            f"#SBATCH --container-mounts={','.join(mounts)}",
+            "#SBATCH --container-workdir=/workspace/speech-piano-train",
+            "#SBATCH --no-container-mount-home",
         ]
         environment_setup = [
             "set -a",
-            f"source {shlex.quote(str(execution.environment_file))}",
+            "source /workspace/speech-piano-train/.env",
             "set +a",
         ]
+        launch = inner
     else:
         command = [
             execution.container_runtime,
@@ -131,6 +127,7 @@ def batch_script(experiment: str, run_dir: Path, config: AppConfig) -> str:
             inner,
         ]
         environment_setup = []
+        launch = f"exec {shlex.join(command)}"
     return "\n".join(
         [
             "#!/usr/bin/env bash",
@@ -139,6 +136,7 @@ def batch_script(experiment: str, run_dir: Path, config: AppConfig) -> str:
             "#SBATCH --output=slurm/%x-%j.out",
             execution.slurm_directives.strip(),
             execution.gpu_directive.strip(),
+            *container_directives,
             "",
             "set -euo pipefail",
             *environment_setup,
@@ -147,7 +145,7 @@ def batch_script(experiment: str, run_dir: Path, config: AppConfig) -> str:
             "export TOKENIZERS_PARALLELISM=false",
             "export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True",
             'export MASTER_PORT="$((20000 + SLURM_JOB_ID % 20000))"',
-            f"exec srun --ntasks=1 {shlex.join(command)}",
+            launch,
             "",
         ]
     )
