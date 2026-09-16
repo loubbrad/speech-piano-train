@@ -37,6 +37,7 @@ export IRMAK_PREPARED_ROOT
 
 echo "Downloading the corpus and model, then preparing both token streams"
 enroot start \
+    --env NVIDIA_VISIBLE_DEVICES=void \
     --env HF_TOKEN \
     --env HF_HOME \
     --env HF_HUB_CACHE \
