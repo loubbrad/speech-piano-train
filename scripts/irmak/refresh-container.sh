@@ -34,31 +34,9 @@ if [[ -e $partial ]]; then
     exit 1
 fi
 
-logs_dir="$repo_dir/logs"
-mkdir -p "$logs_dir"
-export IRMAK_IMAGE_URI="$image_uri"
-export IRMAK_PARTIAL_IMAGE="$partial"
-export IRMAK_MAIN_IMAGE="$main_image"
-
-irmak_sbatch_args
 echo "Importing $image_uri"
-echo "Slurm output: $logs_dir/refresh-container-<job-id>.out"
-sbatch --wait \
-    "${IRMAK_SBATCH_ARGS[@]}" \
-    --job-name=refresh-container \
-    --chdir="$repo_dir" \
-    --output="$logs_dir/refresh-container-%j.out" \
-    --export=ALL \
-    --gres=gpu:1 \
-    --cpus-per-task=16 \
-    --time=01:00:00 \
-    <<'BATCH'
-#!/usr/bin/env bash
-set -euo pipefail
-
-enroot import --output "$IRMAK_PARTIAL_IMAGE" "$IRMAK_IMAGE_URI"
-mv -- "$IRMAK_PARTIAL_IMAGE" "$IRMAK_MAIN_IMAGE"
-BATCH
+enroot import --output "$partial" "$image_uri"
+mv -- "$partial" "$main_image"
 
 ln -sfn -- "$(basename -- "$main_image")" "$IRMAK_CONTAINER"
 echo "Container ready: $main_image"

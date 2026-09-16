@@ -35,40 +35,28 @@ export IRMAK_DATA_REPOSITORY IRMAK_DATA_ARCHIVE IRMAK_DOWNLOAD_DIR
 export IRMAK_DATASET_DIR IRMAK_DATA_ROOT IRMAK_MODEL_REPOSITORY IRMAK_MODEL_DIR
 export IRMAK_PREPARED_ROOT
 
-mounts="$environment_file:/workspace/speech-piano-train/.env:ro"
-mounts+=",$IRMAK_DOWNLOAD_DIR:$IRMAK_DOWNLOAD_DIR"
-mounts+=",$IRMAK_DATA_ROOT:$IRMAK_DATA_ROOT"
-mounts+=",$IRMAK_MODEL_ROOT:$IRMAK_MODEL_ROOT"
-mounts+=",$IRMAK_PREPARED_ROOT:$IRMAK_PREPARED_ROOT"
-mounts+=",$IRMAK_HF_HOME:$IRMAK_HF_HOME"
-
-logs_dir="$repo_dir/logs"
-mkdir -p "$logs_dir"
-
-irmak_sbatch_args
 echo "Downloading the corpus and model, then preparing both token streams"
-echo "Slurm output: $logs_dir/prepare-data-<job-id>.out"
-sbatch --wait \
-    "${IRMAK_SBATCH_ARGS[@]}" \
-    --job-name=prepare-data \
-    --chdir="$repo_dir" \
-    --output="$logs_dir/prepare-data-%j.out" \
-    --export=ALL \
-    --gres=gpu:1 \
-    --cpus-per-task=32 \
-    --time=12:00:00 \
-    --container-image="$IRMAK_CONTAINER" \
-    --container-mounts="$mounts" \
-    --container-workdir=/workspace/speech-piano-train \
-    --no-container-mount-home \
-    --container-env=HF_TOKEN,HF_HOME,HF_HUB_CACHE,IRMAK_DATA_REPOSITORY,IRMAK_DATA_ARCHIVE,IRMAK_DOWNLOAD_DIR,IRMAK_DATASET_DIR,IRMAK_DATA_ROOT,IRMAK_MODEL_REPOSITORY,IRMAK_MODEL_DIR,IRMAK_PREPARED_ROOT \
-    <<'BATCH'
-#!/usr/bin/env bash
+enroot start \
+    --env HF_TOKEN \
+    --env HF_HOME \
+    --env HF_HUB_CACHE \
+    --env IRMAK_DATA_REPOSITORY \
+    --env IRMAK_DATA_ARCHIVE \
+    --env IRMAK_DOWNLOAD_DIR \
+    --env IRMAK_DATASET_DIR \
+    --env IRMAK_DATA_ROOT \
+    --env IRMAK_MODEL_REPOSITORY \
+    --env IRMAK_MODEL_DIR \
+    --env IRMAK_PREPARED_ROOT \
+    --mount "$IRMAK_DOWNLOAD_DIR:$IRMAK_DOWNLOAD_DIR:none:x-create=dir,bind" \
+    --mount "$IRMAK_DATA_ROOT:$IRMAK_DATA_ROOT:none:x-create=dir,bind" \
+    --mount "$IRMAK_MODEL_ROOT:$IRMAK_MODEL_ROOT:none:x-create=dir,bind" \
+    --mount "$IRMAK_PREPARED_ROOT:$IRMAK_PREPARED_ROOT:none:x-create=dir,bind" \
+    --mount "$IRMAK_HF_HOME:$IRMAK_HF_HOME:none:x-create=dir,bind" \
+    "$IRMAK_CONTAINER" bash -s <<'BATCH'
 set -euo pipefail
 
-set -a
-source /workspace/speech-piano-train/.env
-set +a
+cd /workspace/speech-piano-train
 
 hf auth whoami
 hf download "$IRMAK_DATA_REPOSITORY" "$IRMAK_DATA_ARCHIVE" \
@@ -84,7 +72,7 @@ if [[ ! -f $IRMAK_DATASET_DIR/manifest.json && \
         echo "Dataset directory exists but has no manifest: $IRMAK_DATASET_DIR" >&2
         exit 1
     fi
-    extract_root="$IRMAK_DATA_ROOT/.speech-piano-extract-$SLURM_JOB_ID"
+    extract_root="$IRMAK_DATA_ROOT/.speech-piano-extract-login-$$"
     if [[ -e $extract_root ]]; then
         echo "Incomplete extraction already exists: $extract_root" >&2
         exit 1
