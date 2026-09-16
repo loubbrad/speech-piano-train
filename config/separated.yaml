@@ -1,5 +1,5 @@
 data:
-  dataset_dir: /project/flame/ibukey/data/speech_piano_0.4
+  dataset_dir: /project/flame/ibukey/speech_piano_data/speech_piano_0.4
   prepared_dir: /project/flame/ibukey/speech-piano-prepared
   variant: separated
 
