@@ -40,11 +40,11 @@ chmod 600 "$ENROOT_CONFIG_PATH/.credentials"
 # enroot's layer extraction + whiteout conversion must run on a LOCAL,
 # xattr-capable filesystem: it sets overlayfs "opaque" xattrs that NFS
 # (/project/flame here) rejects with "failed to create opaque ovlfs whiteout:
-# ... Not supported". The default /tmp is a small, full tmpfs, so use the
-# node-local ext4 scratch at /mnt/tmp for temp/data (override with
-# ENROOT_SCRATCH_DIR). The layer cache is plain blobs (no xattrs), so it can
-# stay on the roomy project filesystem.
-enroot_scratch="${ENROOT_SCRATCH_DIR:-/mnt/tmp/$USER/enroot}"
+# ... Not supported". The default /tmp is a tmpfs (xattrs work) but small and
+# full, and /mnt/tmp is not user-writable, so use /dev/shm (also tmpfs, so
+# xattrs work, with more room). Override with ENROOT_SCRATCH_DIR. The layer
+# cache is plain blobs (no xattrs), so it can stay on the project filesystem.
+enroot_scratch="${ENROOT_SCRATCH_DIR:-/dev/shm/$USER/enroot}"
 export ENROOT_CACHE_PATH="$IRMAK_CONTAINER_DIR/enroot-cache"
 export ENROOT_DATA_PATH="$enroot_scratch/data"
 export ENROOT_TEMP_PATH="$enroot_scratch/tmp"
