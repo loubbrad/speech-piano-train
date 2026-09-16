@@ -54,6 +54,7 @@ enroot start \
     --mount "$IRMAK_MODEL_ROOT:$IRMAK_MODEL_ROOT:none:x-create=dir,bind" \
     --mount "$IRMAK_PREPARED_ROOT:$IRMAK_PREPARED_ROOT:none:x-create=dir,bind" \
     --mount "$IRMAK_HF_HOME:$IRMAK_HF_HOME:none:x-create=dir,bind" \
+    --mount "$repo_dir/config:/workspace/speech-piano-train/config:none:bind,ro" \
     "$IRMAK_CONTAINER" bash -s <<'BATCH'
 set -euo pipefail
 
