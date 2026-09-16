@@ -59,9 +59,6 @@ set -euo pipefail
 cd /workspace/speech-piano-train
 
 hf auth whoami
-hf download "$IRMAK_DATA_REPOSITORY" "$IRMAK_DATA_ARCHIVE" \
-    --type dataset \
-    --local-dir "$IRMAK_DOWNLOAD_DIR"
 hf download "$IRMAK_MODEL_REPOSITORY" \
     --local-dir "$IRMAK_MODEL_DIR"
 
@@ -72,6 +69,9 @@ if [[ ! -f $IRMAK_DATASET_DIR/manifest.json && \
         echo "Dataset directory exists but has no manifest: $IRMAK_DATASET_DIR" >&2
         exit 1
     fi
+    hf download "$IRMAK_DATA_REPOSITORY" "$IRMAK_DATA_ARCHIVE" \
+        --type dataset \
+        --local-dir "$IRMAK_DOWNLOAD_DIR"
     extract_root="$IRMAK_DATA_ROOT/.speech-piano-extract-login-$$"
     if [[ -e $extract_root ]]; then
         echo "Incomplete extraction already exists: $extract_root" >&2
