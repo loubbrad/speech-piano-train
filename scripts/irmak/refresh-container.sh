@@ -37,13 +37,17 @@ printf 'machine ghcr.io login %s password $GHCR_TOKEN\n' \
     "${GHCR_USERNAME:-loubbrad}" > "$ENROOT_CONFIG_PATH/.credentials"
 chmod 600 "$ENROOT_CONFIG_PATH/.credentials"
 
-# Keep enroot's layer cache and squashfs build scratch on the project
-# filesystem. The defaults ($HOME/.cache/enroot and /tmp) are a quota-limited
-# home and a small, full tmpfs here, which makes the import fail with
-# "quota exceeded" even though /project/flame has space.
+# enroot's layer extraction + whiteout conversion must run on a LOCAL,
+# xattr-capable filesystem: it sets overlayfs "opaque" xattrs that NFS
+# (/project/flame here) rejects with "failed to create opaque ovlfs whiteout:
+# ... Not supported". The default /tmp is a small, full tmpfs, so use the
+# node-local ext4 scratch at /mnt/tmp for temp/data (override with
+# ENROOT_SCRATCH_DIR). The layer cache is plain blobs (no xattrs), so it can
+# stay on the roomy project filesystem.
+enroot_scratch="${ENROOT_SCRATCH_DIR:-/mnt/tmp/$USER/enroot}"
 export ENROOT_CACHE_PATH="$IRMAK_CONTAINER_DIR/enroot-cache"
-export ENROOT_DATA_PATH="$IRMAK_CONTAINER_DIR/enroot-data"
-export ENROOT_TEMP_PATH="$IRMAK_CONTAINER_DIR/enroot-tmp"
+export ENROOT_DATA_PATH="$enroot_scratch/data"
+export ENROOT_TEMP_PATH="$enroot_scratch/tmp"
 export TMPDIR="$ENROOT_TEMP_PATH"
 mkdir -p "$ENROOT_CACHE_PATH" "$ENROOT_DATA_PATH" "$ENROOT_TEMP_PATH"
 
