@@ -1,0 +1,26 @@
+data:
+  dataset_dir: /project/flame/ibukey/speech_piano_data/speech_piano_0.4
+  prepared_dir: /project/flame/ibukey/speech-piano-prepared
+  variant: interleaved
+
+model:
+  name: /project/flame/ibukey/models/Qwen3.5-9B-Base
+
+wandb:
+  name: qwen35-9b-interleaved-4gpu
+
+execution:
+  experiments_dir: /project/flame/ibukey/speech-piano-experiments
+  container_image: /project/flame/ibukey/containers/speech-piano-current.sqsh
+  environment_file: /home/ibukey/louis-speech-piano-train/.env
+  container_runtime: pyxis
+  gpus: 4
+  gpu_directive: "#SBATCH --gres=gpu:8"
+  slurm: |
+    #SBATCH --account=chrisdon
+    #SBATCH --partition=flame
+    #SBATCH --qos=flame-16gpu_qos
+    #SBATCH --nodes=1
+    #SBATCH --ntasks=1
+    #SBATCH --cpus-per-task=32
+    #SBATCH --time=2-00:00:00
