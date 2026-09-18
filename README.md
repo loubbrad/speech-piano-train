@@ -122,9 +122,8 @@ Configuration is merged in this order:
 
 The two text files and the interleaved-mel file directly contain Irmak's
 paths, eight-GPU allocation, and Slurm directives. Each submitted run stores
-the fully merged configuration in its run directory. On Irmak, each GPU
-process gets two DataLoader workers, for 16 workers within the 32-CPU
-allocation.
+the fully merged configuration in its run directory. The interleaved-mel run
+uses 16 DataLoader workers per GPU process; the text runs use two.
 
 Training uses 4096-token sequences, microbatch size 1, and 2,097,152 tokens per
 optimizer update. On eight GPUs this gives 64 gradient accumulation steps. It
