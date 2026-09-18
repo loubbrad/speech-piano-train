@@ -52,6 +52,11 @@ ARG VCS_REF=unknown
 
 ENV PYTHONUNBUFFERED=1
 
+RUN apt-get update \
+    && apt-get install -y -o Dpkg::Use-Pty=0 --no-install-recommends \
+        ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY speech_piano_train ./speech_piano_train
 COPY config/accelerate-fsdp.yaml config/base.yaml \
     config/interleaved.yaml config/interleaved-mel.yaml \
@@ -62,5 +67,5 @@ RUN uv sync --frozen --no-dev --extra cuda-ext \
     && chmod -R a+rX /workspace/speech-piano-train \
     && printf '%s\n' "$VCS_REF" > /opt/speech-piano/image-revision \
     && python -c \
-        "import causal_conv1d, speech_piano_train, torch; from transformers import Qwen3_5ForCausalLM" \
+        "import causal_conv1d, speech_piano_train, torch, torchcodec; from speech_piano_train.data import TokenDataset; from transformers import Qwen3_5ForCausalLM" \
     && hf version

@@ -77,6 +77,11 @@ W&B names are `qwen35-9b-interleaved-midi`, `qwen35-9b-separated-midi`, and
 `qwen35-9b-interleaved-mel`. Only the mel job activates Pianoteq and requires
 `PIANOTEQ_KEY` at runtime.
 
+Running `./scripts/irmak/train.sh interleaved-mel` activates Pianoteq when the
+job starts. Before starting that job again, Irmak must message Louis and wait
+for him to confirm that the previous Pianoteq activation has been disabled and
+an activation slot is free.
+
 Container images are published by `.github/workflows/container.yaml` on each
 push to `main`.
 Non-secret paths and Slurm settings shared by the scripts are in
@@ -125,7 +130,7 @@ Configuration is merged in this order:
 The two text files and the interleaved-mel file directly contain Irmak's
 paths, eight-GPU allocation, and Slurm directives. Each submitted run stores
 the fully merged configuration in its run directory. The interleaved-mel run
-uses 16 DataLoader workers per GPU process; the text runs use two.
+uses 32 DataLoader workers per GPU process; the text runs use two.
 
 Training uses 4096-token sequences, microbatch size 1, and 2,097,152 tokens per
 optimizer update. On eight GPUs this gives 64 gradient accumulation steps. It

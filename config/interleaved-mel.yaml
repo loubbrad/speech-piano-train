@@ -8,7 +8,7 @@ model:
   name: /project/flame/ibukey/models/Qwen3.5-9B-Base
 
 train:
-  num_workers: 16
+  num_workers: 32
 
 wandb:
   name: qwen35-9b-interleaved-mel
