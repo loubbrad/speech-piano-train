@@ -32,7 +32,9 @@ finished successfully, run:
 ./scripts/irmak/refresh-container.sh
 ./scripts/irmak/prepare-data.sh
 ./scripts/irmak/train.sh --dry-run > /tmp/speech-piano-jobs.txt
-./scripts/irmak/train.sh all
+./scripts/irmak/train.sh interleaved-mel
+./scripts/irmak/train.sh interleaved
+./scripts/irmak/train.sh separated
 ```
 
 `refresh-container.sh` runs on the login node, imports the latest `main` image
@@ -64,9 +66,9 @@ output for manual inspection.
 commands for individual eight-GPU runs are:
 
 ```bash
+./scripts/irmak/train.sh interleaved-mel
 ./scripts/irmak/train.sh interleaved
 ./scripts/irmak/train.sh separated
-./scripts/irmak/train.sh interleaved-mel
 ```
 
 `all` submits all three. `--dry-run` prints all three batch scripts without
