@@ -65,10 +65,6 @@ def batch_script(experiment: str, run_dir: Path, config: AppConfig) -> str:
     execution = config.execution
     prepared = config.data.prepared_path
     snapshot = run_dir / "config.yaml"
-    # Pin the container to the first `gpus` devices. Pyxis exposes every GPU on
-    # the node regardless of --gres, so without this the GPU-count guard sees
-    # the whole node. For a full-node request this is a no-op (0..N-1 = all).
-    gpu_list = ",".join(str(index) for index in range(execution.gpus))
     container_directives: list[str] = []
     inner = dedent(
         f"""\
@@ -148,7 +144,6 @@ def batch_script(experiment: str, run_dir: Path, config: AppConfig) -> str:
             "export TRANSFORMERS_OFFLINE=1",
             "export TOKENIZERS_PARALLELISM=false",
             "export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True",
-            f"export CUDA_VISIBLE_DEVICES={gpu_list}",
             'export MASTER_PORT="$((20000 + SLURM_JOB_ID % 20000))"',
             launch,
             "",

@@ -42,9 +42,11 @@ chmod 600 "$ENROOT_CONFIG_PATH/.credentials"
 # (/project/flame here) rejects with "failed to create opaque ovlfs whiteout:
 # ... Not supported". The default /tmp is a tmpfs (xattrs work) but small and
 # full, and /mnt/tmp is not user-writable, so use /dev/shm (also tmpfs, so
-# xattrs work, with more room). Override with ENROOT_SCRATCH_DIR. The layer
-# cache is plain blobs (no xattrs), so it can stay on the project filesystem.
-enroot_scratch="${ENROOT_SCRATCH_DIR:-/dev/shm/$USER/enroot}"
+# xattrs work, with more room). The layer cache is plain blobs (no xattrs), so
+# it can stay on the project filesystem. A failed import retains its unique
+# scratch directory for inspection; a successful import removes it.
+mkdir -p "$IRMAK_ENROOT_SCRATCH_ROOT"
+enroot_scratch=$(mktemp -d "$IRMAK_ENROOT_SCRATCH_ROOT/import.XXXXXX")
 export ENROOT_CACHE_PATH="$IRMAK_CONTAINER_DIR/enroot-cache"
 export ENROOT_DATA_PATH="$enroot_scratch/data"
 export ENROOT_TEMP_PATH="$enroot_scratch/tmp"
@@ -60,6 +62,7 @@ fi
 echo "Importing $image_uri"
 enroot import --output "$partial" "$image_uri"
 mv -- "$partial" "$main_image"
+rm -rf -- "$enroot_scratch"
 
 ln -sfn -- "$(basename -- "$main_image")" "$IRMAK_CONTAINER"
 echo "Container ready: $main_image"
