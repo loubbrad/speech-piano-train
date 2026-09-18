@@ -35,7 +35,7 @@ export IRMAK_DATA_REPOSITORY IRMAK_DATA_ARCHIVE IRMAK_DOWNLOAD_DIR
 export IRMAK_DATASET_DIR IRMAK_DATA_ROOT IRMAK_MODEL_REPOSITORY IRMAK_MODEL_DIR
 export IRMAK_PREPARED_ROOT
 
-echo "Downloading the corpus and model, then preparing both token streams"
+echo "Downloading the corpus and model, then preparing all three streams"
 enroot start \
     --env NVIDIA_VISIBLE_DEVICES=void \
     --env HF_TOKEN \
@@ -95,8 +95,12 @@ else
     echo "Dataset already extracted: $IRMAK_DATASET_DIR"
 fi
 
-for condition in interleaved separated; do
-    output="$IRMAK_PREPARED_ROOT/$condition"
+for target in \
+    interleaved:midi_text:interleaved \
+    separated:midi_text:separated \
+    interleaved:mel:interleaved-mel; do
+    IFS=: read -r variant representation config_name <<<"$target"
+    output="$IRMAK_PREPARED_ROOT/$variant/$representation"
     if [[ -f $output/metadata.json ]]; then
         echo "Already prepared: $output"
     elif [[ -e $output ]]; then
@@ -104,7 +108,7 @@ for condition in interleaved separated; do
         echo "Inspect or move it aside before retrying." >&2
         exit 1
     else
-        speech-piano-prepare --config-file "config/$condition.yaml"
+        speech-piano-prepare --config-file "config/$config_name.yaml"
     fi
 done
 BATCH

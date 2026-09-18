@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import hashlib
 import json
+import math
 import random
 from collections.abc import Iterator
 from concurrent.futures import ProcessPoolExecutor
@@ -14,8 +16,18 @@ import torch
 from tqdm import tqdm
 
 from speech_piano_train.config import DataConfig, ModelConfig
-
-TOKEN_DTYPE = np.dtype("<u4")
+from speech_piano_train.mel import CONFIG as MEL_CONFIG
+from speech_piano_train.midi import MidiTextTokenizer, parse_piano_line
+from speech_piano_train.pianoteq import PianoteqRenderer
+from speech_piano_train.prepared_stream import (
+    INDEX_DTYPE,
+    MIDI_KIND,
+    SEGMENT_DTYPE,
+    TOKEN_DTYPE,
+    MidiRun,
+    PreparedStreamWriter,
+    TokenRun,
+)
 
 
 @dataclass(frozen=True)
@@ -26,6 +38,13 @@ class Document:
 
 
 _WORKER_TOKENIZER: Any = None
+_WORKER_MIDI_TOKENIZER: MidiTextTokenizer | None = None
+
+
+@dataclass(frozen=True)
+class CompiledDocument:
+    document: Document
+    runs: tuple[TokenRun | MidiRun, ...]
 
 
 def prepare_data(
@@ -57,16 +76,17 @@ def prepare_data(
         raise ValueError("Tokenizer has no EOS token")
 
     counts = {"interleaved": 0, "speech": 0, "midi": 0}
-    total_tokens = 0
     with (
-        (output_dir / "tokens.bin").open("wb") as token_file,
+        PreparedStreamWriter(output_dir, data_config.sequence_length) as writer,
         (output_dir / "order.jsonl").open(
             "w", encoding="utf-8", newline="\n"
         ) as order_file,
     ):
-        iterator = tokenize_documents(
+        iterator = compile_documents(
             documents,
             model_config,
+            representation=data_config.representation,
+            seed=data_config.seed,
             workers=data_config.workers,
             tokenizer=tokenizer,
         )
@@ -75,18 +95,18 @@ def prepare_data(
             if data_config.variant == "separated"
             else "Tokenizing interleaved documents"
         )
-        for document, token_ids in tqdm(
+        for compiled in tqdm(
             iterator,
             total=len(documents),
             desc=description,
             unit="documents",
         ):
-            encoded = np.empty(len(token_ids) + 1, dtype=TOKEN_DTYPE)
-            encoded[:-1] = token_ids
-            encoded[-1] = eos_token_id
-            start = total_tokens
-            encoded.tofile(token_file)
-            total_tokens += len(encoded)
+            document = compiled.document
+            logical_start = writer.logical_positions
+            token_start = writer.tokens
+            for run in compiled.runs:
+                writer.append(run)
+            writer.append(TokenRun([eos_token_id]))
             counts[document.modality] += 1
             order_file.write(
                 json.dumps(
@@ -94,24 +114,27 @@ def prepare_data(
                         "youtube_id": document.youtube_id,
                         "modality": document.modality,
                         "path": document.path.relative_to(documents_dir).as_posix(),
-                        "token_start": start,
-                        "token_count": len(encoded),
+                        "logical_start": logical_start,
+                        "logical_count": writer.logical_positions - logical_start,
+                        "token_start": token_start,
+                        "token_count": writer.tokens - token_start,
                     },
                     ensure_ascii=False,
                 )
                 + "\n"
             )
+        stream_counts = writer.close()
 
-    sequences = total_tokens // data_config.sequence_length
     metadata = {
+        "schema_version": 1,
         "variant": data_config.variant,
+        "representation": data_config.representation,
         "seed": data_config.seed,
         "sequence_length": data_config.sequence_length,
         "tokenizer": model_config.name,
         "eos_token_id": eos_token_id,
         "documents_by_modality": counts,
-        "tokens": total_tokens,
-        "sequences": sequences,
+        **stream_counts,
     }
     (output_dir / "metadata.json").write_text(
         json.dumps(metadata, indent=2, sort_keys=True) + "\n",
@@ -129,9 +152,7 @@ def ordered_documents(
 ) -> list[Document]:
     items = [item for item in manifest["items"] if item["split"] == "train"]
     benchmark_ids = set(
-        manifest.get("splits", {})
-        .get("benchmark", {})
-        .get("source_youtube_ids", [])
+        manifest.get("splits", {}).get("benchmark", {}).get("source_youtube_ids", [])
     )
     if any(
         item.get("is_benchmark_source") or item["youtube_id"] in benchmark_ids
@@ -227,61 +248,268 @@ def load_tokenizer(model_config: ModelConfig) -> Any:
     return tokenizer
 
 
-def tokenize_documents(
+def compile_documents(
     documents: list[Document],
     model_config: ModelConfig,
     *,
+    representation: str,
+    seed: int,
     workers: int,
     tokenizer: Any,
-) -> Iterator[tuple[Document, list[int]]]:
+) -> Iterator[CompiledDocument]:
     if workers == 1:
+        midi_tokenizer = MidiTextTokenizer() if representation == "mel" else None
         for document in documents:
-            yield document, encode_document(document, tokenizer)
+            yield compile_document(
+                document,
+                tokenizer,
+                representation=representation,
+                seed=seed,
+                midi_tokenizer=midi_tokenizer,
+            )
         return
 
     with ProcessPoolExecutor(
         max_workers=workers,
         initializer=_init_worker,
-        initargs=(model_config.name,),
+        initargs=(model_config.name, representation),
     ) as executor:
-        yield from executor.map(_encode_worker, documents, chunksize=4)
+        arguments = ((document, representation, seed) for document in documents)
+        yield from executor.map(_compile_worker, arguments, chunksize=4)
 
 
-def encode_document(document: Document, tokenizer: Any) -> list[int]:
+def compile_document(
+    document: Document,
+    tokenizer: Any,
+    *,
+    representation: str,
+    seed: int,
+    midi_tokenizer: MidiTextTokenizer | None = None,
+) -> CompiledDocument:
     text = document.path.read_text(encoding="utf-8")
-    return tokenizer.encode(text, add_special_tokens=False)
+    if representation == "midi_text":
+        runs = (TokenRun(tokenizer.encode(text, add_special_tokens=False)),)
+    elif representation == "mel":
+        if midi_tokenizer is None:
+            raise RuntimeError("mel compilation requires a MIDI tokenizer")
+        runs = tuple(
+            compile_mel_runs(
+                text,
+                tokenizer,
+                midi_tokenizer,
+                seed=seed,
+                document_id=document.youtube_id,
+            )
+        )
+    else:
+        raise ValueError(f"Unknown representation: {representation}")
+    return CompiledDocument(document, runs)
 
 
-def _init_worker(name: str) -> None:
-    global _WORKER_TOKENIZER
+def compile_mel_runs(
+    text: str,
+    tokenizer: Any,
+    midi_tokenizer: MidiTextTokenizer,
+    *,
+    seed: int,
+    document_id: str,
+) -> Iterator[TokenRun | MidiRun]:
+    text_buffer = ""
+    piano_index = 0
+    for line_with_ending in text.splitlines(keepends=True):
+        line = line_with_ending.rstrip("\r\n")
+        line_ending = line_with_ending[len(line) :]
+        if not line.startswith("<piano>"):
+            text_buffer += line_with_ending
+            continue
+
+        block = parse_piano_line(line)
+        midi_tokenizer.validate(line)
+        text_buffer += "<piano>"
+        yield TokenRun(tokenizer.encode(text_buffer, add_special_tokens=False))
+        text_buffer = f"</piano>{line_ending}"
+
+        tail_ms = random_tail_ms(seed, document_id, piano_index)
+        target_samples = (block.end_ms + tail_ms) * MEL_CONFIG.sample_rate // 1_000
+        mel_frames = target_samples // MEL_CONFIG.hop_length
+        logical_length = math.ceil(mel_frames / MEL_CONFIG.frames_per_position)
+        yield MidiRun(line, target_samples, logical_length)
+        piano_index += 1
+
+    if text_buffer:
+        yield TokenRun(tokenizer.encode(text_buffer, add_special_tokens=False))
+
+
+def random_tail_ms(seed: int, document_id: str, piano_index: int) -> int:
+    payload = f"{seed}\0{document_id}\0{piano_index}".encode()
+    value = int.from_bytes(hashlib.blake2b(payload, digest_size=8).digest(), "little")
+    return value % 101 * 10
+
+
+def _init_worker(name: str, representation: str) -> None:
+    global _WORKER_MIDI_TOKENIZER, _WORKER_TOKENIZER
     from transformers import AutoTokenizer
 
     _WORKER_TOKENIZER = AutoTokenizer.from_pretrained(name)
     _WORKER_TOKENIZER.model_max_length = 2**60
+    if representation == "mel":
+        _WORKER_MIDI_TOKENIZER = MidiTextTokenizer()
 
 
-def _encode_worker(document: Document) -> tuple[Document, list[int]]:
-    return document, encode_document(document, _WORKER_TOKENIZER)
+def _compile_worker(arguments: tuple[Document, str, int]) -> CompiledDocument:
+    document, representation, seed = arguments
+    return compile_document(
+        document,
+        _WORKER_TOKENIZER,
+        representation=representation,
+        seed=seed,
+        midi_tokenizer=_WORKER_MIDI_TOKENIZER,
+    )
 
 
-class TokenDataset(torch.utils.data.Dataset[torch.Tensor]):
-    def __init__(self, root: str | Path) -> None:
+class TokenDataset(torch.utils.data.Dataset[dict[str, torch.Tensor | None]]):
+    def __init__(
+        self,
+        root: str | Path,
+        *,
+        pianoteq: str | None = None,
+        renderer: Any = None,
+    ) -> None:
         self.root = Path(root)
         self.metadata = json.loads(
             (self.root / "metadata.json").read_text(encoding="utf-8")
         )
         self.sequence_length = int(self.metadata["sequence_length"])
-        self.tokens = np.memmap(
-            self.root / "tokens.bin",
-            dtype=TOKEN_DTYPE,
-            mode="r",
-            shape=(int(self.metadata["tokens"]),),
+        self.representation = self.metadata["representation"]
+        self.tokens = mmap_or_empty(
+            self.root / "tokens.bin", TOKEN_DTYPE, int(self.metadata["tokens"])
         )
+        self.segments = mmap_or_empty(
+            self.root / "segments.bin",
+            SEGMENT_DTYPE,
+            int(self.metadata["segments"]),
+        )
+        self.index = mmap_or_empty(
+            self.root / "index.bin", INDEX_DTYPE, int(self.metadata["sequences"])
+        )
+        self.piano_blocks = None
+        if self.metadata["piano_block_bytes"]:
+            self.piano_blocks = np.memmap(
+                self.root / "piano_blocks.bin",
+                dtype=np.uint8,
+                mode="r",
+                shape=(int(self.metadata["piano_block_bytes"]),),
+            )
+        self.pianoteq = pianoteq
+        self._renderer = renderer
 
     def __len__(self) -> int:
         return int(self.metadata["sequences"])
 
-    def __getitem__(self, index: int) -> torch.Tensor:
-        start = index * self.sequence_length
-        values = self.tokens[start : start + self.sequence_length]
-        return torch.from_numpy(np.asarray(values, dtype=np.int64))
+    def __getitem__(self, index: int) -> dict[str, torch.Tensor | None]:
+        if index < 0:
+            index += len(self)
+        if not 0 <= index < len(self):
+            raise IndexError(index)
+        cursor = self.index[index]
+        segment_id = int(cursor["segment_id"])
+        segment_offset = int(cursor["offset"])
+        input_ids = torch.empty(self.sequence_length, dtype=torch.long)
+        mel_values = (
+            torch.zeros(
+                (
+                    self.sequence_length * MEL_CONFIG.frames_per_position,
+                    MEL_CONFIG.num_mel_bins,
+                ),
+                dtype=torch.float32,
+            )
+            if self.representation == "mel"
+            else None
+        )
+        mel_mask = (
+            torch.zeros(self.sequence_length, dtype=torch.bool)
+            if self.representation == "mel"
+            else None
+        )
+
+        output_offset = 0
+        while output_offset < self.sequence_length:
+            segment = self.segments[segment_id]
+            available = int(segment["logical_length"]) - segment_offset
+            take = min(self.sequence_length - output_offset, available)
+            output_slice = slice(output_offset, output_offset + take)
+            if int(segment["kind"]) == MIDI_KIND:
+                assert mel_values is not None and mel_mask is not None
+                values = self._render(segment)
+                input_ids[output_slice] = int(self.metadata["eos_token_id"])
+                source_start = segment_offset * MEL_CONFIG.frames_per_position
+                source_end = (segment_offset + take) * MEL_CONFIG.frames_per_position
+                output_start = output_offset * MEL_CONFIG.frames_per_position
+                output_end = (output_offset + take) * MEL_CONFIG.frames_per_position
+                mel_values[output_start:output_end] = values[source_start:source_end]
+                mel_mask[output_slice] = True
+            else:
+                source_start = int(segment["source_offset"]) + segment_offset
+                values = self.tokens[source_start : source_start + take]
+                input_ids[output_slice] = torch.from_numpy(
+                    np.asarray(values, dtype=np.int64)
+                )
+            output_offset += take
+            segment_offset += take
+            if segment_offset == int(segment["logical_length"]):
+                segment_id += 1
+                segment_offset = 0
+
+        return {
+            "input_ids": input_ids,
+            "mel_values": mel_values,
+            "mel_mask": mel_mask,
+        }
+
+    def _render(self, segment: np.void) -> torch.Tensor:
+        if self.piano_blocks is None:
+            raise RuntimeError("prepared stream has no piano blocks")
+        if self._renderer is None:
+            if self.pianoteq is None:
+                raise RuntimeError("Pianoteq executable was not configured")
+            self._renderer = PianoteqRenderer(self.pianoteq)
+        start = int(segment["source_offset"])
+        end = start + int(segment["storage_length"])
+        line = bytes(self.piano_blocks[start:end]).decode("utf-8")
+        values = self._renderer(line, int(segment["target_samples"]))
+        expected = (
+            int(segment["logical_length"]) * MEL_CONFIG.frames_per_position,
+            MEL_CONFIG.num_mel_bins,
+        )
+        if values.shape != expected:
+            raise RuntimeError(
+                f"Expected rendered mel shape {expected}, got {values.shape}"
+            )
+        return values
+
+
+def collate_examples(
+    examples: list[dict[str, torch.Tensor | None]],
+) -> dict[str, torch.Tensor | None]:
+    input_ids = torch.stack([example["input_ids"] for example in examples])
+    if examples[0]["mel_values"] is None:
+        return {"input_ids": input_ids, "mel_values": None, "mel_mask": None}
+    return {
+        "input_ids": input_ids,
+        "mel_values": torch.stack([example["mel_values"] for example in examples]),
+        "mel_mask": torch.stack([example["mel_mask"] for example in examples]),
+    }
+
+
+def init_data_worker(_: int) -> None:
+    torch.set_num_threads(1)
+    try:
+        torch.set_num_interop_threads(1)
+    except RuntimeError:
+        pass
+
+
+def mmap_or_empty(path: Path, dtype: np.dtype, length: int) -> np.ndarray:
+    if length == 0:
+        return np.empty(0, dtype=dtype)
+    return np.memmap(path, dtype=dtype, mode="r", shape=(length,))

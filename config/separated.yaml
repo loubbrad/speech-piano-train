@@ -2,12 +2,16 @@ data:
   dataset_dir: /project/flame/ibukey/speech_piano_data/speech_piano_0.4
   prepared_dir: /project/flame/ibukey/speech-piano-prepared
   variant: separated
+  representation: midi_text
 
 model:
   name: /project/flame/ibukey/models/Qwen3.5-9B-Base
 
 wandb:
-  name: qwen35-9b-separated
+  name: qwen35-9b-separated-midi
+
+train:
+  num_workers: 2
 
 execution:
   experiments_dir: /project/flame/ibukey/speech-piano-experiments

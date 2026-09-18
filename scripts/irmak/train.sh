@@ -23,13 +23,21 @@ if [[ ! -f $IRMAK_CONTAINER ]]; then
 fi
 
 case ${1-interleaved} in
-    interleaved|separated) conditions=("$1") ;;
-    --dry-run) conditions=(interleaved); dry_run=1 ;;
+    interleaved|separated|interleaved-mel) conditions=("$1") ;;
+    all) conditions=(interleaved separated interleaved-mel) ;;
+    --dry-run)
+        conditions=(interleaved separated interleaved-mel)
+        dry_run=1
+        ;;
     *)
-        echo "Usage: $0 [interleaved|separated|--dry-run]" >&2
+        echo "Usage: $0 [interleaved|separated|interleaved-mel|all|--dry-run]" >&2
         exit 2
         ;;
 esac
+
+if [[ " ${conditions[*]} " == *" interleaved-mel "* ]]; then
+    : "${PIANOTEQ_KEY:?Set PIANOTEQ_KEY in $environment_file for the mel run}"
+fi
 
 submit_env="$repo_dir/.irmak-submit-env"
 if [[ ! -x $submit_env/bin/python ]]; then
@@ -46,9 +54,14 @@ fi
     --quiet --no-build-isolation --no-deps --editable "$repo_dir"
 
 for condition in "${conditions[@]}"; do
+    case $condition in
+        interleaved) experiment=qwen35-9b-interleaved-midi ;;
+        separated) experiment=qwen35-9b-separated-midi ;;
+        interleaved-mel) experiment=qwen35-9b-interleaved-mel ;;
+    esac
     command=(
         "$submit_env/bin/speech-piano-submit"
-        "qwen35-9b-$condition"
+        "$experiment"
         --config-file "$repo_dir/config/$condition.yaml"
     )
     if [[ ${dry_run:-0} == 1 ]]; then

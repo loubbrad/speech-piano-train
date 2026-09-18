@@ -31,7 +31,7 @@ def test_loads_local_paths_and_experiment_override(tmp_path: Path) -> None:
     config = load_config(experiment, local_path=local)
 
     assert config.data.variant == "separated"
-    assert config.data.prepared_path == (tmp_path / "prepared/separated")
+    assert config.data.prepared_path == (tmp_path / "prepared/separated/midi_text")
     assert config.execution.gpus == 4
     assert config.execution.container_runtime == "singularity"
     assert config.execution.container_reference == str(tmp_path / "image.sif")
@@ -44,6 +44,17 @@ def test_rejects_unknown_config_keys(tmp_path: Path) -> None:
     override.write_text("train:\n  typo: true\n", encoding="utf-8")
 
     with pytest.raises(ValidationError):
+        load_config(override, local_path=tmp_path / "missing.yaml")
+
+
+def test_rejects_mel_for_separated_documents(tmp_path: Path) -> None:
+    override = tmp_path / "override.yaml"
+    override.write_text(
+        "data:\n  variant: separated\n  representation: mel\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValidationError, match="only supports interleaved"):
         load_config(override, local_path=tmp_path / "missing.yaml")
 
 

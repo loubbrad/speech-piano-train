@@ -16,7 +16,9 @@ from tqdm import tqdm
 from transformers import Qwen3_5ForCausalLM, get_cosine_schedule_with_warmup
 
 from speech_piano_train.config import AppConfig
-from speech_piano_train.data import TokenDataset
+from speech_piano_train.data import TokenDataset, collate_examples, init_data_worker
+from speech_piano_train.model import AudioQwen3_5ForCausalLM
+from speech_piano_train.pianoteq import resolve_executable
 
 
 @dataclass
@@ -43,7 +45,12 @@ def train(config: AppConfig, run_dir: str | Path) -> None:
     if accelerator.distributed_type != DistributedType.FSDP:
         raise ValueError("Training requires Accelerate FSDP")
 
-    dataset = TokenDataset(config.data.prepared_path)
+    pianoteq = (
+        resolve_executable(config.audio.pianoteq)
+        if config.data.representation == "mel"
+        else None
+    )
+    dataset = TokenDataset(config.data.prepared_path, pianoteq=pianoteq)
     divisor = accelerator.num_processes * config.train.micro_batch_size
     update_tokens = dataset.sequence_length * divisor
     if config.train.tokens_per_update % update_tokens:
@@ -65,10 +72,18 @@ def train(config: AppConfig, run_dir: str | Path) -> None:
         num_workers=config.train.num_workers,
         pin_memory=True,
         persistent_workers=config.train.num_workers > 0,
+        collate_fn=collate_examples,
+        worker_init_fn=init_data_worker,
+        in_order=config.data.representation != "mel",
     )
 
     set_seed(config.train.seed)
-    model = Qwen3_5ForCausalLM.from_pretrained(
+    model_class = (
+        AudioQwen3_5ForCausalLM
+        if config.data.representation == "mel"
+        else Qwen3_5ForCausalLM
+    )
+    model = model_class.from_pretrained(
         config.model.name,
         dtype=torch.float32,
         low_cpu_mem_usage=True,
@@ -151,12 +166,26 @@ def train(config: AppConfig, run_dir: str | Path) -> None:
     accumulated_batches = 0
 
     model.train()
-    for batch_index, input_ids in enumerate(
+    for batch_index, batch in enumerate(
         batches,
         start=progress.batch_cursor,
     ):
+        input_ids = batch["input_ids"]
+        labels = input_ids.clone()
+        mel_mask = batch["mel_mask"]
+        if mel_mask is not None:
+            labels[mel_mask] = -100
         with accelerator.accumulate(model):
-            output = model(input_ids=input_ids, labels=input_ids, use_cache=False)
+            if mel_mask is None:
+                output = model(input_ids=input_ids, labels=labels, use_cache=False)
+            else:
+                output = model(
+                    input_ids=input_ids,
+                    mel_values=batch["mel_values"],
+                    mel_mask=mel_mask,
+                    labels=labels,
+                    use_cache=False,
+                )
             loss = output.loss
             accumulated_loss += loss.detach()
             accumulated_batches += 1

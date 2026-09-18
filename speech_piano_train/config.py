@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 
@@ -26,9 +26,16 @@ class DataConfig(ConfigModel):
     dataset_dir: Path | None
     prepared_dir: Path | None
     variant: Literal["interleaved", "separated"]
+    representation: Literal["midi_text", "mel"]
     seed: int
     sequence_length: int = Field(gt=0)
     workers: int = Field(gt=0)
+
+    @model_validator(mode="after")
+    def mel_is_interleaved(self) -> DataConfig:
+        if self.representation == "mel" and self.variant != "interleaved":
+            raise ValueError("mel preparation only supports interleaved documents")
+        return self
 
     @property
     def dataset_path(self) -> Path:
@@ -38,7 +45,11 @@ class DataConfig(ConfigModel):
     @property
     def prepared_path(self) -> Path:
         assert self.prepared_dir is not None
-        return self.prepared_dir / self.variant
+        return self.prepared_dir / self.variant / self.representation
+
+
+class AudioConfig(ConfigModel):
+    pianoteq: str
 
 
 class ModelConfig(ConfigModel):
@@ -105,6 +116,7 @@ class ExecutionConfig(ConfigModel):
 
 class AppConfig(ConfigModel):
     data: DataConfig
+    audio: AudioConfig
     model: ModelConfig
     train: TrainConfig
     wandb: WandbConfig

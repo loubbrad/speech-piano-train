@@ -100,7 +100,7 @@ if [[ -f $environment_file ]]; then
         run ls -l "$environment_file"
     fi
 
-    for variable in HF_TOKEN WANDB_API_KEY GHCR_TOKEN; do
+    for variable in HF_TOKEN WANDB_API_KEY PIANOTEQ_KEY GHCR_TOKEN; do
         if LC_ALL=C grep -q "^${variable}=." "$environment_file" 2>/dev/null; then
             printf '%s is present (value hidden)\n' "$variable"
         else

@@ -2,9 +2,13 @@ data:
   dataset_dir: null
   prepared_dir: null
   variant: interleaved
+  representation: midi_text
   seed: 42
   sequence_length: 4096
   workers: 16
+
+audio:
+  pianoteq: "Pianoteq 8 STAGE"
 
 model:
   name: Qwen/Qwen3.5-9B-Base
@@ -20,7 +24,7 @@ train:
   warmup_ratio: 0.05
   max_grad_norm: 1.0
   checkpoint_interval: 100
-  num_workers: 2
+  num_workers: 16
 
 wandb:
   project: speech-piano-cpt

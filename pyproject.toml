@@ -9,6 +9,7 @@ description = "Continued pretraining experiments on Speech/Piano."
 requires-python = ">=3.12"
 dependencies = [
     "accelerate==1.14.0",
+    "ariautils @ git+https://github.com/EleutherAI/aria-utils.git@93da092204e5b1189ed8e0259f6156266fd086a7",
     "numpy",
     "pydantic",
     "pyyaml",

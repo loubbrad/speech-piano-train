@@ -22,14 +22,14 @@ def main() -> None:
         parser.error("experiment must contain only letters, digits, '.', '_', and '-'")
 
     config = load_config(args.config_file)
-    run_dir = prepare_submission(args.experiment, config)
     if args.dry_run:
-        print(run_dir / "job.sh")
+        print(preview_submission(args.experiment, config))
         return
+    run_dir = prepare_submission(args.experiment, config)
     subprocess.run(["sbatch", str(run_dir / "job.sh")], check=True)
 
 
-def prepare_submission(experiment: str, config: AppConfig) -> Path:
+def validate_submission(config: AppConfig) -> None:
     execution = config.execution
     prepared = config.data.prepared_path
     environment = execution.environment_file
@@ -51,6 +51,16 @@ def prepare_submission(experiment: str, config: AppConfig) -> Path:
     validate_directives(execution.slurm_directives)
     validate_directives(execution.gpu_directive)
 
+
+def preview_submission(experiment: str, config: AppConfig) -> str:
+    validate_submission(config)
+    run_dir = config.execution.experiments_path / experiment
+    return batch_script(experiment, run_dir, config)
+
+
+def prepare_submission(experiment: str, config: AppConfig) -> Path:
+    validate_submission(config)
+    execution = config.execution
     run_dir = execution.experiments_path / experiment
     run_dir.mkdir(parents=True)
     (run_dir / "slurm").mkdir()
@@ -66,12 +76,20 @@ def batch_script(experiment: str, run_dir: Path, config: AppConfig) -> str:
     prepared = config.data.prepared_path
     snapshot = run_dir / "config.yaml"
     container_directives: list[str] = []
+    pianoteq_setup = "unset PIANOTEQ_KEY"
+    if config.data.representation == "mel":
+        pianoteq_setup = (
+            '"Pianoteq 8 STAGE" --headless --activate "$PIANOTEQ_KEY"\n'
+            "        unset PIANOTEQ_KEY"
+        )
     inner = dedent(
         f"""\
         set -euo pipefail
         export HOME=/tmp/speech-piano-home
         mkdir -p "$HOME"
         cd /workspace/speech-piano-train
+
+        {pianoteq_setup}
 
         detected=$(python -c 'import torch; print(torch.cuda.device_count())')
         if (( detected != {execution.gpus} )); then
