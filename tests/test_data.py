@@ -6,7 +6,6 @@ import numpy as np
 import pytest
 import torch
 
-import speech_piano_train.data as data_module
 from speech_piano_train.config import DataConfig, ModelConfig
 from speech_piano_train.data import (
     TOKEN_DTYPE,
@@ -33,11 +32,6 @@ class FakeTokenizer:
     def encode(self, text: str, *, add_special_tokens: bool) -> list[int]:
         assert not add_special_tokens
         return [ord(character) for character in text]
-
-
-class FakeMidiTokenizer:
-    def validate(self, line: str) -> None:
-        assert line.startswith("<piano>") and line.endswith("</piano>")
 
 
 def write_upstream_fixture(root: Path) -> dict:
@@ -321,7 +315,6 @@ def test_audio_compiler_tokenizes_only_contiguous_text_runs() -> None:
         compile_mel_runs(
             f"before\n{piano}\nafter",
             FakeTokenizer(),
-            FakeMidiTokenizer(),
             seed=7,
             document_id="aaaaaaaaaaa",
         )
@@ -378,10 +371,7 @@ def test_dataset_slices_midi_segments_across_examples(tmp_path: Path) -> None:
     assert calls == [(line, 3_840), (line, 3_840)]
 
 
-def test_builds_and_loads_complete_mel_dataset(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_builds_and_loads_complete_mel_dataset(tmp_path: Path) -> None:
     youtube_id = "aaaaaaaaaaa"
     folder = tmp_path / "documents" / youtube_id[:2]
     folder.mkdir(parents=True)
@@ -410,7 +400,6 @@ def test_builds_and_loads_complete_mel_dataset(
         ),
         encoding="utf-8",
     )
-    monkeypatch.setattr(data_module, "MidiTextTokenizer", FakeMidiTokenizer)
     text_config = data_config(
         tmp_path,
         "interleaved",

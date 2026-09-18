@@ -17,7 +17,7 @@ from tqdm import tqdm
 
 from speech_piano_train.config import DataConfig, ModelConfig
 from speech_piano_train.mel import CONFIG as MEL_CONFIG
-from speech_piano_train.midi import MidiTextTokenizer, parse_piano_line
+from speech_piano_train.midi import parse_piano_line
 from speech_piano_train.pianoteq import PianoteqRenderer
 from speech_piano_train.prepared_stream import (
     INDEX_DTYPE,
@@ -38,7 +38,6 @@ class Document:
 
 
 _WORKER_TOKENIZER: Any = None
-_WORKER_MIDI_TOKENIZER: MidiTextTokenizer | None = None
 
 
 @dataclass(frozen=True)
@@ -258,24 +257,22 @@ def compile_documents(
     tokenizer: Any,
 ) -> Iterator[CompiledDocument]:
     if workers == 1:
-        midi_tokenizer = MidiTextTokenizer() if representation == "mel" else None
         for document in documents:
             yield compile_document(
                 document,
                 tokenizer,
                 representation=representation,
                 seed=seed,
-                midi_tokenizer=midi_tokenizer,
             )
         return
 
     with ProcessPoolExecutor(
         max_workers=workers,
         initializer=_init_worker,
-        initargs=(model_config.name, representation),
+        initargs=(model_config.name,),
     ) as executor:
         arguments = ((document, representation, seed) for document in documents)
-        yield from executor.map(_compile_worker, arguments, chunksize=4)
+        yield from executor.map(_compile_worker, arguments, chunksize=1)
 
 
 def compile_document(
@@ -284,19 +281,15 @@ def compile_document(
     *,
     representation: str,
     seed: int,
-    midi_tokenizer: MidiTextTokenizer | None = None,
 ) -> CompiledDocument:
     text = document.path.read_text(encoding="utf-8")
     if representation == "midi_text":
         runs = (TokenRun(tokenizer.encode(text, add_special_tokens=False)),)
     elif representation == "mel":
-        if midi_tokenizer is None:
-            raise RuntimeError("mel compilation requires a MIDI tokenizer")
         runs = tuple(
             compile_mel_runs(
                 text,
                 tokenizer,
-                midi_tokenizer,
                 seed=seed,
                 document_id=document.youtube_id,
             )
@@ -309,7 +302,6 @@ def compile_document(
 def compile_mel_runs(
     text: str,
     tokenizer: Any,
-    midi_tokenizer: MidiTextTokenizer,
     *,
     seed: int,
     document_id: str,
@@ -324,7 +316,6 @@ def compile_mel_runs(
             continue
 
         block = parse_piano_line(line)
-        midi_tokenizer.validate(line)
         text_buffer += "<piano>"
         yield TokenRun(tokenizer.encode(text_buffer, add_special_tokens=False))
         text_buffer = f"</piano>{line_ending}"
@@ -346,14 +337,12 @@ def random_tail_ms(seed: int, document_id: str, piano_index: int) -> int:
     return value % 101 * 10
 
 
-def _init_worker(name: str, representation: str) -> None:
-    global _WORKER_MIDI_TOKENIZER, _WORKER_TOKENIZER
+def _init_worker(name: str) -> None:
+    global _WORKER_TOKENIZER
     from transformers import AutoTokenizer
 
     _WORKER_TOKENIZER = AutoTokenizer.from_pretrained(name)
     _WORKER_TOKENIZER.model_max_length = 2**60
-    if representation == "mel":
-        _WORKER_MIDI_TOKENIZER = MidiTextTokenizer()
 
 
 def _compile_worker(arguments: tuple[Document, str, int]) -> CompiledDocument:
@@ -363,7 +352,6 @@ def _compile_worker(arguments: tuple[Document, str, int]) -> CompiledDocument:
         _WORKER_TOKENIZER,
         representation=representation,
         seed=seed,
-        midi_tokenizer=_WORKER_MIDI_TOKENIZER,
     )
 
 
