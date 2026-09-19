@@ -173,8 +173,12 @@ def train(config: AppConfig, run_dir: str | Path) -> None:
         input_ids = batch["input_ids"]
         labels = input_ids.clone()
         mel_mask = batch["mel_mask"]
+        zero_loss = False
         if mel_mask is not None:
             labels[mel_mask] = -100
+            zero_loss_examples = mel_mask[:, 1:].float().mean(dim=1) > 0.9
+            labels[zero_loss_examples] = -100
+            zero_loss = bool(zero_loss_examples.all())
         with accelerator.accumulate(model):
             if mel_mask is None:
                 output = model(input_ids=input_ids, labels=labels, use_cache=False)
@@ -187,6 +191,8 @@ def train(config: AppConfig, run_dir: str | Path) -> None:
                     use_cache=False,
                 )
             loss = output.loss
+            if zero_loss:
+                loss = output.logits[..., 0].sum() * 0.0
             accumulated_loss += loss.detach()
             accumulated_batches += 1
             accelerator.backward(loss)
