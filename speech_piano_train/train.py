@@ -176,7 +176,7 @@ def train(config: AppConfig, run_dir: str | Path) -> None:
         zero_loss = False
         if mel_mask is not None:
             labels[mel_mask] = -100
-            zero_loss_examples = mel_mask[:, 1:].float().mean(dim=1) > 0.9
+            zero_loss_examples = mel_mask[:, 1:].float().mean(dim=1) > 0.95
             labels[zero_loss_examples] = -100
             zero_loss = bool(zero_loss_examples.all())
         with accelerator.accumulate(model):
